@@ -55,40 +55,6 @@ npm install react-native-bluetooth-obd-manager
 yarn add react-native-bluetooth-obd-manager
 ```
 
-### Required Peer Dependencies
-```bash
-npm install react-native-ble-manager react-native-permissions
-# or
-yarn add react-native-ble-manager react-native-permissions
-```
-
-### iOS Setup
-
-1. Add the following to your `Info.plist`:
-```xml
-<key>NSBluetoothAlwaysUsageDescription</key>
-<string>Your app needs Bluetooth to communicate with OBD devices</string>
-<key>NSBluetoothPeripheralUsageDescription</key>
-<string>Your app needs Bluetooth to communicate with OBD devices</string>
-```
-
-2. Install pods:
-```bash
-cd ios && pod install
-```
-
-### Android Setup
-
-Add the following permissions to your `AndroidManifest.xml`:
-```xml
-<uses-permission android:name="android.permission.BLUETOOTH"/>
-<uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
-<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-<!-- For Android 12+ -->
-<uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
-<uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
-```
-
 ## Quick Start
 
 1. **Wrap your app with BluetoothProvider:**
@@ -250,6 +216,22 @@ The library implements a robust device discovery system:
    - 4-second timeout protection
    - Automatic stream recovery
    - Out-of-sync detection
+
+### Enhanced Streaming Management
+
+The library uses RxJS for efficient stream processing:
+
+1. **Reactive Data Flow**
+   - Observable-based notification handling
+   - Efficient data streaming
+   - Automatic memory management
+   - Smart backpressure handling
+
+2. **Smart Response Detection**
+   - Reactive command response correlation
+   - Automatic stream cleanup
+   - Built-in error recovery
+   - Custom operator pipelines
 
 ## Hook API
 
