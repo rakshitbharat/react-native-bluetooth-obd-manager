@@ -69,14 +69,6 @@ jest.mock('react-native', () => {
   };
 });
 
-// Create a mock for response callbacks
-const mockResponseCallback = jest.fn();
-
-// Create a simulation function for device response
-const simulateDeviceResponse = (response: string) => {
-  mockResponseCallback(response);
-};
-
 // Skip this test file for now until we can properly mock React Native components
 describe.skip('BluetoothContext V2', () => {
   test('skipped tests to avoid React Native mocking issues', () => {
