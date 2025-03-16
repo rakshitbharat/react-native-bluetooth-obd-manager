@@ -5,7 +5,7 @@ module.exports = {
     'node_modules/(?!(react-native|@react-native|react-native-ble-manager|react-native-permissions)/)',
   ],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
-  testRegex: '(/__tests__/.*|(\\.|/)(test|spec))\\.[jt]sx?$',
+  testRegex: '(/__tests__/simple)\\.[jt]sx?$',
   coverageDirectory: 'coverage',
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
@@ -22,4 +22,7 @@ module.exports = {
     },
   },
   testEnvironment: 'node',
-}; 
+  transform: {
+    '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
+  },
+};

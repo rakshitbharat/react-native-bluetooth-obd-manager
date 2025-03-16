@@ -9,37 +9,39 @@ export const initialState: BluetoothState = {
   connectedDevice: null,
   connectionDetails: null,
   isStreaming: false,
-  error: null
+  pendingCommand: null,
+  responseData: null,
+  error: null,
 };
 
 export const bluetoothReducer = (
   state: BluetoothState,
-  action: { type: BluetoothActionType; payload?: any }
+  action: { type: BluetoothActionType; payload?: any },
 ): BluetoothState => {
   switch (action.type) {
     case BluetoothActionType.INITIALIZE_SUCCESS:
       return {
         ...state,
-        isInitialized: true
+        isInitialized: true,
       };
 
     case BluetoothActionType.INITIALIZE_FAILURE:
       return {
         ...state,
         isInitialized: false,
-        error: 'Failed to initialize Bluetooth'
+        error: 'Failed to initialize Bluetooth',
       };
 
     case BluetoothActionType.UPDATE_BLUETOOTH_STATE:
       return {
         ...state,
-        isBluetoothOn: action.payload
+        isBluetoothOn: action.payload,
       };
 
     case BluetoothActionType.UPDATE_PERMISSIONS:
       return {
         ...state,
-        hasPermissions: action.payload
+        hasPermissions: action.payload,
       };
 
     case BluetoothActionType.SCAN_START:
@@ -47,32 +49,30 @@ export const bluetoothReducer = (
         ...state,
         isScanning: true,
         discoveredDevices: [],
-        error: null
+        error: null,
       };
 
     case BluetoothActionType.SCAN_STOP:
       return {
         ...state,
-        isScanning: false
+        isScanning: false,
       };
 
     case BluetoothActionType.DEVICE_DISCOVERED:
       // Prevent duplicate devices
-      const exists = state.discoveredDevices.some(
-        device => device.id === action.payload.id
-      );
-      
+      const exists = state.discoveredDevices.some(device => device.id === action.payload.id);
+
       return {
         ...state,
         discoveredDevices: exists
           ? state.discoveredDevices
-          : [...state.discoveredDevices, action.payload]
+          : [...state.discoveredDevices, action.payload],
       };
 
     case BluetoothActionType.CONNECT_START:
       return {
         ...state,
-        error: null
+        error: null,
       };
 
     case BluetoothActionType.CONNECT_SUCCESS:
@@ -80,7 +80,7 @@ export const bluetoothReducer = (
         ...state,
         connectedDevice: action.payload.device,
         connectionDetails: action.payload.details,
-        error: null
+        error: null,
       };
 
     case BluetoothActionType.CONNECT_FAILURE:
@@ -88,7 +88,7 @@ export const bluetoothReducer = (
         ...state,
         error: action.payload,
         connectedDevice: null,
-        connectionDetails: null
+        connectionDetails: null,
       };
 
     case BluetoothActionType.DISCONNECT_SUCCESS:
@@ -97,31 +97,39 @@ export const bluetoothReducer = (
         connectedDevice: null,
         connectionDetails: null,
         isStreaming: false,
-        error: null
+        error: null,
       };
 
     case BluetoothActionType.SEND_COMMAND:
       return {
         ...state,
-        isStreaming: true
+        isStreaming: true,
+        pendingCommand: action.payload,
+      };
+
+    case BluetoothActionType.RECEIVE_DATA:
+      return {
+        ...state,
+        responseData: action.payload,
       };
 
     case BluetoothActionType.COMPLETE_COMMAND:
       return {
         ...state,
-        isStreaming: false
+        isStreaming: false,
+        pendingCommand: null,
       };
 
     case BluetoothActionType.RESET_STREAM:
       return {
         ...state,
-        isStreaming: false
+        isStreaming: false,
       };
 
     case BluetoothActionType.SET_ERROR:
       return {
         ...state,
-        error: action.payload
+        error: action.payload,
       };
 
     default:

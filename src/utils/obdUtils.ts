@@ -12,7 +12,7 @@ export enum OBDProtocol {
   ISO15765_29_500 = 7,
   ISO15765_11_250 = 8,
   ISO15765_29_250 = 9,
-  SAE_J1939 = 10
+  SAE_J1939 = 10,
 }
 
 // ELM327 command constants
@@ -28,7 +28,8 @@ export const ELM_COMMANDS = {
   SPACES_OFF: 'ATS0',
   HEADERS_OFF: 'ATH0',
   ECHO_OFF: 'ATE0',
-  ADAPTIVE_TIMING_2: 'ATAT2'
+  ADAPTIVE_TIMING_2: 'ATAT2',
+  GET_VERSION: 'ATI',
 };
 
 // Response identifiers
@@ -44,7 +45,7 @@ export const RSP_ID = {
   BUSINIERR: 'BUS INIT: ERROR',
   BUSBUSY: 'BUS BUSY',
   STOPPED: 'STOPPED',
-  SEARCHING: 'SEARCHING...'
+  SEARCHING: 'SEARCHING...',
 };
 
 // OBD Service modes
@@ -59,7 +60,7 @@ export const OBD_SERVICE_MODES = {
   PENDINGCODES: 0x07,
   CTRL_MODE: 0x08,
   VEH_INFO: 0x09,
-  PERMACODES: 0x0a
+  PERMACODES: 0x0a,
 };
 
 // Standard PIDs for OBD-II
@@ -72,7 +73,7 @@ export const STANDARD_PIDS = {
   MAF_SENSOR: '0110',
   O2_SENSORS: '0113',
   OBD_STANDARDS: '011C',
-  VIN: '0902'
+  VIN: '0902',
 };
 
 // Interface for ECU connector
@@ -89,7 +90,7 @@ export interface ECUConnector {
  * @returns ECU connector that returns raw data
  */
 export const createRawECUConnector = (
-  sendCommandFn: (command: string) => Promise<string>
+  sendCommandFn: (command: string) => Promise<string>,
 ): ECUConnector => createECUConnector(sendCommandFn, true);
 
 /**
@@ -98,7 +99,7 @@ export const createRawECUConnector = (
  * @returns ECU connector that returns decoded data
  */
 export const createDecodedECUConnector = (
-  sendCommandFn: (command: string) => Promise<string>
+  sendCommandFn: (command: string) => Promise<string>,
 ): ECUConnector => createECUConnector(sendCommandFn, false);
 
 /**
@@ -109,11 +110,11 @@ export const createDecodedECUConnector = (
  */
 export const createECUConnector = (
   sendCommandFn: (command: string) => Promise<string>,
-  setRawResponse = false
+  setRawResponse = false,
 ): ECUConnector => {
   // Buffer to store the raw response
   let rawResponseBuffer: number[] | null = null;
-  
+
   // Handler to save raw response data
   const handleRawResponse = (data: number[]) => {
     rawResponseBuffer = data;
@@ -126,10 +127,10 @@ export const createECUConnector = (
       try {
         // Reset raw buffer before sending new command
         rawResponseBuffer = null;
-        
+
         // Send command and get response
         const response = await sendCommandFn(command);
-        
+
         // Return appropriate response format
         return response;
       } catch (error) {
@@ -148,6 +149,6 @@ export const createECUConnector = (
 
     async getRawResponse(): Promise<number[] | null> {
       return rawResponseBuffer;
-    }
+    },
   };
 };

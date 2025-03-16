@@ -1,6 +1,6 @@
 import { Peripheral } from 'react-native-ble-manager';
 import { ConnectionDetails } from '../types/bluetoothTypes';
-import { AsyncStorage } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -84,14 +84,14 @@ export class DeviceManager {
    */
   public async rememberDevice(device: Peripheral, isOBDDevice: boolean = true): Promise<void> {
     const existingIndex = this.knownDevices.findIndex(d => d.id === device.id);
-    
+
     if (existingIndex >= 0) {
       // Update existing device
       this.knownDevices[existingIndex] = {
         id: device.id,
         name: device.name || 'Unknown Device',
         lastConnected: Date.now(),
-        isOBDDevice
+        isOBDDevice,
       };
     } else {
       // Add new device
@@ -99,7 +99,7 @@ export class DeviceManager {
         id: device.id,
         name: device.name || 'Unknown Device',
         lastConnected: Date.now(),
-        isOBDDevice
+        isOBDDevice,
       });
 
       // Maintain maximum list size
@@ -149,15 +149,15 @@ export class DeviceManager {
    */
   public async forgetDevice(deviceId: string): Promise<void> {
     this.knownDevices = this.knownDevices.filter(device => device.id !== deviceId);
-    
+
     // If this was the last connected device, clear that too
     if (this.lastConnectedDevice === deviceId) {
       this.lastConnectedDevice = null;
     }
-    
+
     await this.saveToStorage();
   }
-  
+
   /**
    * Forget all devices
    */
@@ -166,14 +166,14 @@ export class DeviceManager {
     this.lastConnectedDevice = null;
     await this.saveToStorage();
   }
-  
+
   /**
    * Check if a device is known
    */
   public isKnownDevice(deviceId: string): boolean {
     return this.knownDevices.some(device => device.id === deviceId);
   }
-  
+
   /**
    * Get device info by ID
    */

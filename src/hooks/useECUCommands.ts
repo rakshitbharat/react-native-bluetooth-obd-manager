@@ -1,14 +1,14 @@
 import { useCallback, useEffect } from 'react';
 import { useBluetooth } from './useBluetooth';
-import CommandHandler from '../utils/commandHandler';
-import NotificationHandler from '../utils/notificationHandler';
+import commandHandler from '../utils/commandHandler';
+import notificationHandler from '../utils/notificationHandler';
 import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
-import { 
-  ELM_COMMANDS, 
+import {
+  ELM_COMMANDS,
   STANDARD_PIDS,
   createDecodedECUConnector,
   createRawECUConnector,
-  ECUConnector
+  ECUConnector,
 } from '../utils/obdUtils';
 
 /**
@@ -17,46 +17,38 @@ import {
  */
 export const useECUCommands = () => {
   const { connectedDevice, connectionDetails, sendCommand: rawSendCommand } = useBluetooth();
-  
+
   // Initialize handlers
   useEffect(() => {
     if (connectedDevice?.id) {
-      NotificationHandler.getInstance().setActivePeripheral(connectedDevice.id);
+      notificationHandler.setActivePeripheral(connectedDevice.id);
     }
     return () => {
-      NotificationHandler.getInstance().reset();
-      CommandHandler.getInstance().reset();
+      notificationHandler.reset();
+      commandHandler.reset();
     };
   }, [connectedDevice?.id]);
 
   // Enhanced send command with automatic retries and proper cleanup
-  const sendCommand = useCallback(async (
-    command: string,
-    timeoutMs?: number
-  ): Promise<string> => {
-    if (!connectedDevice || !connectionDetails) {
-      throw new BluetoothOBDError(
-        BluetoothErrorType.CONNECTION_ERROR,
-        'No device connected'
-      );
-    }
-
-    // Create write function for the command handler
-    const writeFn = async (bytes: number[]) => {
-      if (connectionDetails.writeWithResponse) {
-        await rawSendCommand(command, timeoutMs);
-      } else {
-        await rawSendCommand(command, timeoutMs);
+  const sendCommand = useCallback(
+    async (command: string, timeoutMs?: number): Promise<string> => {
+      if (!connectedDevice || !connectionDetails) {
+        throw new BluetoothOBDError(BluetoothErrorType.CONNECTION_ERROR, 'No device connected');
       }
-    };
 
-    return CommandHandler.getInstance().sendCommand(
-      command,
-      writeFn,
-      connectedDevice.id,
-      timeoutMs
-    );
-  }, [connectedDevice, connectionDetails, rawSendCommand]);
+      // Create write function for the command handler
+      const writeFn = async (bytes: number[]) => {
+        if (connectionDetails.writeWithResponse) {
+          await rawSendCommand(command, timeoutMs);
+        } else {
+          await rawSendCommand(command, timeoutMs);
+        }
+      };
+
+      return commandHandler.sendCommand(command, writeFn, connectedDevice.id, timeoutMs);
+    },
+    [connectedDevice, connectionDetails, rawSendCommand],
+  );
 
   // Initialize ECU with standard commands
   const initializeECU = useCallback(async (): Promise<boolean> => {
@@ -64,14 +56,14 @@ export const useECUCommands = () => {
       // Reset
       await sendCommand('ATZ');
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
       // Configure ECU
       await sendCommand('ATE0'); // Echo off
       await sendCommand('ATL0'); // Linefeeds off
       await sendCommand('ATH0'); // Headers off
       await sendCommand('ATS0'); // Spaces off
       await sendCommand('ATSP0'); // Auto protocol
-      
+
       return true;
     } catch (error) {
       console.error('Failed to initialize ECU:', error);
@@ -207,6 +199,6 @@ export const useECUCommands = () => {
     clearTroubleCodes,
     getRawConnector,
     getDecodedConnector,
-    isReady: !!connectedDevice && !!connectionDetails
+    isReady: !!connectedDevice && !!connectionDetails,
   };
 };

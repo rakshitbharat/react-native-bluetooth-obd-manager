@@ -3,7 +3,7 @@
  * - react-native-ble-manager
  * - react-native-permissions
  * - Bluetooth permissions in iOS/Android
- * 
+ *
  * Please ensure you have these configured in your React Native project before using this library.
  */
 
@@ -34,4 +34,5 @@ export { decodeData, encodeCommand, isResponseComplete, formatResponse } from '.
 export { logBluetoothError, BluetoothErrorType } from './utils/errorUtils';
 export { requestBluetoothPermissions, checkBluetoothState } from './utils/permissionUtils';
 
-export default BluetoothProvider;
+// Export the BluetoothProvider as default for convenience
+export { BluetoothProvider as default };

@@ -1,5 +1,5 @@
 import { Peripheral } from 'react-native-ble-manager';
-import { AsyncStorage } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ConnectionDetails } from '../types/bluetoothTypes';
 
 const STORAGE_KEY = '@OBDManager:deviceHistory';
@@ -31,7 +31,7 @@ class DeviceCompatibilityManager {
 
   async loadDeviceHistory(): Promise<void> {
     if (this.isLoaded) return;
-    
+
     try {
       const historyJson = await AsyncStorage.getItem(STORAGE_KEY);
       if (historyJson) {
@@ -56,14 +56,14 @@ class DeviceCompatibilityManager {
   async recordSuccessfulConnection(
     deviceId: string,
     deviceName: string,
-    connectionDetails: ConnectionDetails
+    connectionDetails: ConnectionDetails,
   ): Promise<void> {
     await this.loadDeviceHistory();
 
     const profile = this.deviceHistory.get(deviceId) || {
       id: deviceId,
       name: deviceName,
-      successCount: 0
+      successCount: 0,
     };
 
     profile.serviceUUID = connectionDetails.serviceUUID;
@@ -79,7 +79,7 @@ class DeviceCompatibilityManager {
 
   async getKnownConnectionDetails(deviceId: string): Promise<ConnectionDetails | null> {
     await this.loadDeviceHistory();
-    
+
     const profile = this.deviceHistory.get(deviceId);
     if (!profile) return null;
 
@@ -87,13 +87,13 @@ class DeviceCompatibilityManager {
       serviceUUID: profile.serviceUUID,
       writeCharacteristicUUID: profile.writeCharacteristic,
       notifyCharacteristicUUID: profile.notifyCharacteristic,
-      writeWithResponse: profile.writeWithResponse
+      writeWithResponse: profile.writeWithResponse,
     };
   }
 
   async getRecentDevices(limit: number = 5): Promise<DeviceProfile[]> {
     await this.loadDeviceHistory();
-    
+
     return Array.from(this.deviceHistory.values())
       .sort((a, b) => b.lastConnected - a.lastConnected)
       .slice(0, limit);
@@ -117,7 +117,7 @@ const OBD_KEYWORDS = [
   'car',
   'scanner',
   'vgate',
-  'interface'
+  'interface',
 ];
 
 // Keywords commonly found in non-OBD Bluetooth devices
@@ -131,7 +131,7 @@ const NON_OBD_KEYWORDS = [
   'pc',
   'phone',
   'fitness',
-  'printer'
+  'printer',
 ];
 
 /**
@@ -141,17 +141,17 @@ const NON_OBD_KEYWORDS = [
  */
 export const isLikelyOBDDevice = (device: Peripheral): boolean => {
   if (!device.name) return false;
-  
+
   const name = device.name.toLowerCase();
-  
+
   // Check if name contains any OBD-related keywords
   const hasOBDKeyword = OBD_KEYWORDS.some(keyword => name.includes(keyword));
   if (hasOBDKeyword) return true;
-  
+
   // Exclude devices with common non-OBD keywords
   const hasNonOBDKeyword = NON_OBD_KEYWORDS.some(keyword => name.includes(keyword));
   if (hasNonOBDKeyword) return false;
-  
+
   // Check for common OBD device address prefixes
   if (device.id && typeof device.id === 'string') {
     // Some common OBD device address prefixes (not exhaustive)
@@ -162,7 +162,7 @@ export const isLikelyOBDDevice = (device: Peripheral): boolean => {
       }
     }
   }
-  
+
   return false;
 };
 
@@ -172,29 +172,29 @@ export const isLikelyOBDDevice = (device: Peripheral): boolean => {
  */
 export const getOBDCompatibilityScore = (device: Peripheral): number => {
   if (!device.name) return 0;
-  
+
   let score = 0;
   const name = device.name.toLowerCase();
-  
+
   // Score based on device name
   OBD_KEYWORDS.forEach(keyword => {
     if (name.includes(keyword)) {
       score += 20;
     }
   });
-  
+
   // Reduce score for non-OBD keywords
   NON_OBD_KEYWORDS.forEach(keyword => {
     if (name.includes(keyword)) {
       score -= 15;
     }
   });
-  
+
   // Additional points for specific identifiers
   if (name.includes('elm327')) score += 30;
   if (name.includes('obdii')) score += 25;
   if (name.includes('scanner')) score += 10;
-  
+
   // Clamp score between 0 and 100
   return Math.max(0, Math.min(100, score));
 };

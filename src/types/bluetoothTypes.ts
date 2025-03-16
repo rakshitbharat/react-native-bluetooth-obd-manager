@@ -16,6 +16,8 @@ export interface BluetoothState {
   connectedDevice: any | null;
   connectionDetails: ConnectionDetails | null;
   isStreaming: boolean;
+  pendingCommand: string | null;
+  responseData: string | null;
   error: string | null;
 }
 
@@ -32,9 +34,10 @@ export enum BluetoothActionType {
   CONNECT_FAILURE = 'CONNECT_FAILURE',
   DISCONNECT_SUCCESS = 'DISCONNECT_SUCCESS',
   SEND_COMMAND = 'SEND_COMMAND',
+  RECEIVE_DATA = 'RECEIVE_DATA',
   COMPLETE_COMMAND = 'COMPLETE_COMMAND',
   RESET_STREAM = 'RESET_STREAM',
-  SET_ERROR = 'SET_ERROR'
+  SET_ERROR = 'SET_ERROR',
 }
 
 export type BluetoothAction =
@@ -46,7 +49,10 @@ export type BluetoothAction =
   | { type: BluetoothActionType.SCAN_STOP }
   | { type: BluetoothActionType.DEVICE_DISCOVERED; payload: Peripheral }
   | { type: BluetoothActionType.CONNECT_START }
-  | { type: BluetoothActionType.CONNECT_SUCCESS; payload: { device: Peripheral; details: ConnectionDetails } }
+  | {
+      type: BluetoothActionType.CONNECT_SUCCESS;
+      payload: { device: Peripheral; details: ConnectionDetails };
+    }
   | { type: BluetoothActionType.CONNECT_FAILURE; payload?: string }
   | { type: BluetoothActionType.DISCONNECT_SUCCESS }
   | { type: BluetoothActionType.SEND_COMMAND; payload: string }

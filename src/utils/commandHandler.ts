@@ -1,18 +1,18 @@
 import { BluetoothOBDError, BluetoothErrorType } from './errorUtils';
 import { decodeData, encodeCommand } from './dataUtils';
-import NotificationHandler from './notificationHandler';
+import notificationHandler from './notificationHandler';
 import { firstValueFrom, race, timer } from 'rxjs';
 import { filter, map, takeUntil } from 'rxjs/operators';
 
 export class CommandHandler {
   private static instance: CommandHandler;
   private lastCommand: string | null = null;
-  private notificationHandler: typeof NotificationHandler;
+  private notificationHandler = notificationHandler;
   private responseBuffer: string = '';
   private readonly COMMAND_TIMEOUT = 4000; // 4 seconds
 
   private constructor() {
-    this.notificationHandler = NotificationHandler.getInstance();
+    // No need to initialize notificationHandler here anymore
   }
 
   static getInstance(): CommandHandler {
@@ -26,7 +26,7 @@ export class CommandHandler {
     command: string,
     writeFn: (bytes: number[]) => Promise<void>,
     deviceId: string,
-    timeoutMs: number = this.COMMAND_TIMEOUT
+    timeoutMs: number = this.COMMAND_TIMEOUT,
   ): Promise<string> {
     // Clear any existing response
     this.responseBuffer = '';
@@ -48,8 +48,8 @@ export class CommandHandler {
             throw new Error('Incomplete response');
           }),
           filter(response => !!response),
-          takeUntil(timer(timeoutMs))
-        )
+          takeUntil(timer(timeoutMs)),
+        ),
       );
 
       // Send command
@@ -58,23 +58,28 @@ export class CommandHandler {
       // Wait for response or timeout
       const response = await Promise.race([
         responsePromise,
-        new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new BluetoothOBDError(
-            BluetoothErrorType.TIMEOUT_ERROR,
-            `Command ${command} timed out after ${timeoutMs}ms`
-          )), timeoutMs)
-        )
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new BluetoothOBDError(
+                  BluetoothErrorType.TIMEOUT_ERROR,
+                  `Command ${command} timed out after ${timeoutMs}ms`,
+                ),
+              ),
+            timeoutMs,
+          ),
+        ),
       ]);
 
       return response;
-
     } catch (error) {
       if (error instanceof BluetoothOBDError) {
         throw error;
       }
       throw new BluetoothOBDError(
         BluetoothErrorType.WRITE_ERROR,
-        `Failed to send command ${command}: ${error.message}`
+        `Failed to send command ${command}: ${error.message}`,
       );
     }
   }

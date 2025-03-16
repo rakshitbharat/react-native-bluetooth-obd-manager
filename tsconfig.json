@@ -1,24 +1,18 @@
 {
   "compilerOptions": {
-    "target": "es2017",
+    "target": "es6",
     "module": "commonjs",
-    "lib": ["es2017"],
     "declaration": true,
     "outDir": "./lib",
     "strict": true,
+    "jsx": "react-native",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "jsx": "react-native",
-    "moduleResolution": "node",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "baseUrl": ".",
-    "paths": {
-      "*": ["src/*"]
-    }
+    "lib": ["es2019", "dom"],
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true
   },
-  "include": ["src"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "**/__tests__/*", "lib"]
 }
