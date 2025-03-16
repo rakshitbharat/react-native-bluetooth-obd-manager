@@ -127,14 +127,23 @@ describe('ECUConnector', () => {
       expect(newConnector.isConnected()).toBe(false);
     });
 
-    it('should return false when device ID is null', () => {
+    it('should return false when device ID is not set', () => {
       const connector = new ECUConnector();
       connector.setContext({
         sendCommand: mockSendCommand,
         disconnect: mockDisconnect
       });
-      connector.setDeviceId(''); // Use empty string instead of null
-      
+      // Don't call setDeviceId at all
+      expect(connector.isConnected()).toBe(false);
+    });
+
+    it('should return false when device ID is empty', () => {
+      const connector = new ECUConnector();
+      connector.setContext({
+        sendCommand: mockSendCommand,
+        disconnect: mockDisconnect
+      });
+      connector.setDeviceId('');
       expect(connector.isConnected()).toBe(false);
     });
   });
