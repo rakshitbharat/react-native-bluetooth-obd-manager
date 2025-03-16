@@ -1,8 +1,9 @@
-import React from 'react';
 import { renderHook, act } from '@testing-library/react-native';
+import React from 'react';
+import BleManager from 'react-native-ble-manager';
+
 import { BluetoothProvider, useBluetooth } from '../context/BluetoothContext';
 import { BluetoothActionType } from '../types/bluetoothTypes';
-import BleManager from 'react-native-ble-manager';
 import * as permissionUtils from '../utils/permissionUtils';
 
 // Custom waitForNextUpdate implementation

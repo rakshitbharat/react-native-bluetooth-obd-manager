@@ -1,12 +1,13 @@
+import { Platform } from 'react-native';
+import BleManager from 'react-native-ble-manager';
+import * as Permissions from 'react-native-permissions';
+import type { Permission, PermissionStatus } from 'react-native-permissions';
+
 import { 
   requestBluetoothPermissions,
   checkBluetoothPermissions,
   checkBluetoothState
 } from '../utils/permissionUtils';
-import { Platform } from 'react-native';
-import * as Permissions from 'react-native-permissions';
-import BleManager from 'react-native-ble-manager';
-import type { Permission, PermissionStatus } from 'react-native-permissions';
 
 // Mock dependencies
 jest.mock('react-native', () => ({

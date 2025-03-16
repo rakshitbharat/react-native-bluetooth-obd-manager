@@ -1,6 +1,7 @@
 import BleManager from 'react-native-ble-manager';
-import { BluetoothErrorType, BluetoothOBDError } from '../utils/errorUtils';
+
 import { encodeCommand, decodeData, isResponseComplete, formatResponse } from '../utils/dataUtils';
+import { BluetoothErrorType, BluetoothOBDError } from '../utils/errorUtils';
 import { ELM_COMMANDS } from '../utils/obdUtils';
 
 /**
@@ -18,8 +19,8 @@ export interface IECUConnector {
 export class ECUConnector {
   private context: any;
   private deviceId: string | null = null;
-  private responseTimeout: number = 4000; // Default timeout in ms
-  private isInitialized: boolean = false;
+  private responseTimeout = 4000; // Default timeout in ms
+  private isInitialized = false;
   
   constructor() {
     // Default constructor for tests
@@ -131,8 +132,8 @@ export class BluetoothECUConnector implements IECUConnector {
   private writeCharacteristic: string;
   private notifyCharacteristic: string;
   private writeWithResponse: boolean;
-  private isConnectedFlag: boolean = false;
-  private responseBuffer: string = '';
+  private isConnectedFlag = false;
+  private responseBuffer = '';
   private responseCallback: ((response: string) => void) | null = null;
   private timeoutId: NodeJS.Timeout | null = null;
   private responsePromise: Promise<string> | null = null;
@@ -144,7 +145,7 @@ export class BluetoothECUConnector implements IECUConnector {
     serviceUUID: string,
     writeCharacteristic: string,
     notifyCharacteristic: string,
-    writeWithResponse: boolean = true
+    writeWithResponse = true
   ) {
     this.deviceId = deviceId;
     this.serviceUUID = serviceUUID;
@@ -229,7 +230,7 @@ export class BluetoothECUConnector implements IECUConnector {
    * @param timeoutMs Optional timeout in ms
    * @returns Formatted response string
    */
-  public async sendCommand(command: string, timeoutMs: number = 5000): Promise<string> {
+  public async sendCommand(command: string, timeoutMs = 5000): Promise<string> {
     if (!this.isConnectedFlag) {
       throw new BluetoothOBDError(
         BluetoothErrorType.CONNECTION_ERROR,
@@ -363,7 +364,7 @@ export function createECUConnector(
   serviceUUID: string,
   writeCharacteristic: string,
   notifyCharacteristic: string,
-  writeWithResponse: boolean = true
+  writeWithResponse = true
 ): IECUConnector {
   return new BluetoothECUConnector(
     deviceId,

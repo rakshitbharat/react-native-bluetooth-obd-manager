@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import BleManager from 'react-native-ble-manager';
+
 import { bluetoothReducer, initialState } from './bluetoothReducer';
-import { requestBluetoothPermissions, checkBluetoothState } from '../utils/permissionUtils';
-import { decodeData, isResponseComplete, encodeCommand, formatResponse } from '../utils/dataUtils';
 import { BluetoothActionType } from '../types/bluetoothTypes';
+import { decodeData, isResponseComplete, encodeCommand, formatResponse } from '../utils/dataUtils';
+import { requestBluetoothPermissions, checkBluetoothState } from '../utils/permissionUtils';
 
 // Create the context
 export const BluetoothContext = createContext<any>(null);
