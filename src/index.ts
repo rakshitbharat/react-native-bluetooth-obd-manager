@@ -1,3 +1,12 @@
+/**
+ * ⚠️ IMPORTANT: This library requires proper setup of the following dependencies:
+ * - react-native-ble-manager
+ * - react-native-permissions
+ * - Bluetooth permissions in iOS/Android
+ * 
+ * Please ensure you have these configured in your React Native project before using this library.
+ */
+
 // Core context and hooks
 export { BluetoothProvider, useBluetooth } from './context/BluetoothContext';
 export { useOBDManager } from './hooks/useOBDManager';

@@ -49,3 +49,5 @@ continue we dont have anything outside of our project we already have all ref co
 i can se we are making more focus on getting data its fine we dont have to remove it for now but our project is not made to get data our project is made mainly for 3 things connect to any OBD device easily then a function called sendCommand which give data in return itself so dont have to rely on any eventlistner thow we are listning for data itself in sendCommand after writing the data that logic is there in ref folder OBDMonitor file
 
 also at lsat the function called disconnect
+
+this project is not at all a guide to setup the libraries things add strict note that please use this application after installing all the libraries and then start using it

@@ -1,3 +1,15 @@
+# React Native Bluetooth OBD Manager Features
+
+⚠️ **IMPORTANT: PREREQUISITES REQUIRED** ⚠️
+
+This is NOT a setup guide for React Native or its Bluetooth libraries. Before using this library, you MUST have:
+- A fully configured React Native project
+- react-native-ble-manager properly installed and working
+- react-native-permissions properly installed and configured
+- Bluetooth permissions properly set up in your iOS/Android projects
+
+This library focuses on providing stable OBD communication AFTER you have set up the above requirements.
+
 # React Native Bluetooth OBD Manager
 
 A comprehensive React Native library for seamless communication with ELM327 OBD-II adapters via Bluetooth. This library handles all the complexities of Bluetooth communication, device discovery, and OBD protocol management.

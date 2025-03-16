@@ -1,6 +1,27 @@
 # React Native Bluetooth OBD Manager
 
-A lightweight yet powerful React Native library that simplifies Bluetooth communication with ELM327 OBD-II adapters. Built to handle the complexities of Bluetooth connectivity and OBD protocol management, allowing you to focus on building your vehicle diagnostic application.
+⚠️ **IMPORTANT PREREQUISITE NOTE** ⚠️
+This library is NOT a guide for setting up React Native or its dependencies. You MUST have a working React Native project with all necessary Bluetooth libraries properly installed and configured before using this library.
+
+## Required Prerequisites
+
+Before using this library, ensure you have:
+
+1. A working React Native project
+2. Properly installed and configured:
+   - react-native-ble-manager
+   - react-native-permissions
+3. Properly set up Bluetooth permissions in your iOS and Android projects
+4. Basic understanding of Bluetooth LE communication
+
+If you haven't set these up, this library will NOT work. Please set up your project with all dependencies first.
+
+## Purpose
+
+This library provides a stable connection interface for ELM327 OBD devices, focusing on three core functionalities:
+1. Connecting to OBD devices with smart service discovery
+2. Sending commands and receiving responses
+3. Clean disconnection and state management
 
 ## Features
 
