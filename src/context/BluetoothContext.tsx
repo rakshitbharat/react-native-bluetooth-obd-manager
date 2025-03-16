@@ -32,6 +32,23 @@ const WRITE_CHARACTERISTIC = Platform.OS === 'android'
   ? 'fff2'
   : '0000fff2-0000-1000-8000-00805f9b34fb';
 
+const OBD_SERVICE_UUIDS = [
+  'FFF0',  // Most common
+  'FFE0',  // Alternative service
+  '18F0',  // Used by older adapters
+  'BEEF',  // Used by Chinese adapters
+  'E7A1',  // Another variant
+  'FFE1',  // Some Chinese clones
+  'FFF1'   // Another clone variant
+];
+
+const OBD_CHARACTERISTIC_UUIDS = [
+  'FFF1', // Most common
+  'FFE1', // Alternative
+  'FF01', // Generic
+  'E7A1', // Some older adapters
+];
+
 // Singleton for BLE data receiver
 class BLEDataReceiver {
   static instance: BLEDataReceiver;
@@ -347,9 +364,10 @@ export const BluetoothProvider: React.FC<{children: React.ReactNode}> = ({ child
         const service = peripheralInfo.services.find(s => {
           const serviceUUID = Platform.OS === 'ios' ? s.uuid.toLowerCase() : s.uuid;
           return (
-            serviceUUID === DEFAULT_SERVICE_UUID_SHORT ||
-            serviceUUID === DEFAULT_SERVICE_UUID ||
-            serviceUUID.endsWith('fff0')
+            OBD_SERVICE_UUIDS.some(uuid => 
+              serviceUUID === uuid.toLowerCase() ||
+              serviceUUID === `0000${uuid.toLowerCase()}-0000-1000-8000-00805f9b34fb`
+            )
           );
         });
 

@@ -1,4 +1,111 @@
 import { Peripheral } from 'react-native-ble-manager';
+import { AsyncStorage } from 'react-native';
+import { ConnectionDetails } from '../types/bluetoothTypes';
+
+const STORAGE_KEY = '@OBDManager:deviceHistory';
+
+interface DeviceProfile {
+  id: string;
+  name: string;
+  serviceUUID: string;
+  writeCharacteristic: string;
+  notifyCharacteristic: string;
+  writeWithResponse: boolean;
+  lastConnected: number;
+  successCount: number;
+}
+
+class DeviceCompatibilityManager {
+  private static instance: DeviceCompatibilityManager;
+  private deviceHistory: Map<string, DeviceProfile> = new Map();
+  private isLoaded = false;
+
+  private constructor() {}
+
+  static getInstance(): DeviceCompatibilityManager {
+    if (!DeviceCompatibilityManager.instance) {
+      DeviceCompatibilityManager.instance = new DeviceCompatibilityManager();
+    }
+    return DeviceCompatibilityManager.instance;
+  }
+
+  async loadDeviceHistory(): Promise<void> {
+    if (this.isLoaded) return;
+    
+    try {
+      const historyJson = await AsyncStorage.getItem(STORAGE_KEY);
+      if (historyJson) {
+        const history = JSON.parse(historyJson);
+        this.deviceHistory = new Map(Object.entries(history));
+      }
+      this.isLoaded = true;
+    } catch (error) {
+      console.error('Failed to load device history:', error);
+    }
+  }
+
+  private async saveDeviceHistory(): Promise<void> {
+    try {
+      const historyObject = Object.fromEntries(this.deviceHistory);
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(historyObject));
+    } catch (error) {
+      console.error('Failed to save device history:', error);
+    }
+  }
+
+  async recordSuccessfulConnection(
+    deviceId: string,
+    deviceName: string,
+    connectionDetails: ConnectionDetails
+  ): Promise<void> {
+    await this.loadDeviceHistory();
+
+    const profile = this.deviceHistory.get(deviceId) || {
+      id: deviceId,
+      name: deviceName,
+      successCount: 0
+    };
+
+    profile.serviceUUID = connectionDetails.serviceUUID;
+    profile.writeCharacteristic = connectionDetails.writeCharacteristicUUID;
+    profile.notifyCharacteristic = connectionDetails.notifyCharacteristicUUID;
+    profile.writeWithResponse = connectionDetails.writeWithResponse;
+    profile.lastConnected = Date.now();
+    profile.successCount++;
+
+    this.deviceHistory.set(deviceId, profile);
+    await this.saveDeviceHistory();
+  }
+
+  async getKnownConnectionDetails(deviceId: string): Promise<ConnectionDetails | null> {
+    await this.loadDeviceHistory();
+    
+    const profile = this.deviceHistory.get(deviceId);
+    if (!profile) return null;
+
+    return {
+      serviceUUID: profile.serviceUUID,
+      writeCharacteristicUUID: profile.writeCharacteristic,
+      notifyCharacteristicUUID: profile.notifyCharacteristic,
+      writeWithResponse: profile.writeWithResponse
+    };
+  }
+
+  async getRecentDevices(limit: number = 5): Promise<DeviceProfile[]> {
+    await this.loadDeviceHistory();
+    
+    return Array.from(this.deviceHistory.values())
+      .sort((a, b) => b.lastConnected - a.lastConnected)
+      .slice(0, limit);
+  }
+
+  async clearDeviceHistory(): Promise<void> {
+    this.deviceHistory.clear();
+    await this.saveDeviceHistory();
+  }
+}
+
+export default DeviceCompatibilityManager.getInstance();
 
 // Common keywords found in OBD device names
 const OBD_KEYWORDS = [

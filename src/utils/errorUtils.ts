@@ -185,3 +185,41 @@ export const logBluetoothError = (error: any, context?: string): void => {
     `${contextPrefix}${parsedError.name} [${parsedError.type}]: ${parsedError.message}`
   );
 };
+
+export const attemptRecovery = async (
+  error: any,
+  retryFn: () => Promise<any>,
+  maxAttempts: number = 3
+): Promise<any> => {
+  let attempts = 0;
+  let lastError = error;
+
+  while (attempts < maxAttempts) {
+    try {
+      return await retryFn();
+    } catch (e) {
+      lastError = e;
+      attempts++;
+      
+      // Wait longer between each retry
+      await new Promise(resolve => setTimeout(resolve, attempts * 1000));
+    }
+  }
+
+  throw lastError;
+};
+
+export const isRecoverableError = (error: any): boolean => {
+  if (error instanceof BluetoothOBDError) {
+    switch (error.type) {
+      case BluetoothErrorType.CONNECTION_ERROR:
+      case BluetoothErrorType.SERVICE_ERROR:
+      case BluetoothErrorType.WRITE_ERROR:
+      case BluetoothErrorType.TIMEOUT_ERROR:
+        return true;
+      default:
+        return false;
+    }
+  }
+  return false;
+};

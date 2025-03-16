@@ -1,5 +1,8 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useBluetooth } from './useBluetooth';
+import CommandHandler from '../utils/commandHandler';
+import NotificationHandler from '../utils/notificationHandler';
+import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
 import { 
   ELM_COMMANDS, 
   STANDARD_PIDS,
@@ -13,45 +16,74 @@ import {
  * Provides functions for common OBD operations
  */
 export const useECUCommands = () => {
-  const { sendCommand, isConnected } = useBluetooth();
+  const { connectedDevice, connectionDetails, sendCommand: rawSendCommand } = useBluetooth();
+  
+  // Initialize handlers
+  useEffect(() => {
+    if (connectedDevice?.id) {
+      NotificationHandler.getInstance().setActivePeripheral(connectedDevice.id);
+    }
+    return () => {
+      NotificationHandler.getInstance().reset();
+      CommandHandler.getInstance().reset();
+    };
+  }, [connectedDevice?.id]);
 
-  /**
-   * Initialize the OBD connection with common setup commands
-   */
-  const initializeOBD = useCallback(async () => {
-    if (!isConnected) return false;
+  // Enhanced send command with automatic retries and proper cleanup
+  const sendCommand = useCallback(async (
+    command: string,
+    timeoutMs?: number
+  ): Promise<string> => {
+    if (!connectedDevice || !connectionDetails) {
+      throw new BluetoothOBDError(
+        BluetoothErrorType.CONNECTION_ERROR,
+        'No device connected'
+      );
+    }
 
+    // Create write function for the command handler
+    const writeFn = async (bytes: number[]) => {
+      if (connectionDetails.writeWithResponse) {
+        await rawSendCommand(command, timeoutMs);
+      } else {
+        await rawSendCommand(command, timeoutMs);
+      }
+    };
+
+    return CommandHandler.getInstance().sendCommand(
+      command,
+      writeFn,
+      connectedDevice.id,
+      timeoutMs
+    );
+  }, [connectedDevice, connectionDetails, rawSendCommand]);
+
+  // Initialize ECU with standard commands
+  const initializeECU = useCallback(async (): Promise<boolean> => {
     try {
-      // Reset the adapter
-      await sendCommand(ELM_COMMANDS.RESET);
-      
-      // Wait for initialization
+      // Reset
+      await sendCommand('ATZ');
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Configure the adapter
-      await sendCommand(ELM_COMMANDS.ECHO_OFF);
-      await sendCommand(ELM_COMMANDS.LINEFEEDS_OFF);
-      await sendCommand(ELM_COMMANDS.HEADERS_OFF);
-      await sendCommand(ELM_COMMANDS.SPACES_OFF);
+      // Configure ECU
+      await sendCommand('ATE0'); // Echo off
+      await sendCommand('ATL0'); // Linefeeds off
+      await sendCommand('ATH0'); // Headers off
+      await sendCommand('ATS0'); // Spaces off
+      await sendCommand('ATSP0'); // Auto protocol
       
-      // Set automatic protocol detection
-      await sendCommand(ELM_COMMANDS.AUTO_PROTOCOL);
-
-      // Set adaptive timing
-      await sendCommand(ELM_COMMANDS.ADAPTIVE_TIMING_2);
-
       return true;
     } catch (error) {
-      console.error('OBD initialization failed:', error);
+      console.error('Failed to initialize ECU:', error);
       return false;
     }
-  }, [isConnected, sendCommand]);
+  }, [sendCommand]);
 
   /**
    * Get vehicle identification number
    */
   const getVIN = useCallback(async () => {
-    if (!isConnected) return null;
+    if (!connectedDevice) return null;
     try {
       const response = await sendCommand(STANDARD_PIDS.VIN);
       return response;
@@ -59,13 +91,13 @@ export const useECUCommands = () => {
       console.error('Failed to get VIN:', error);
       return null;
     }
-  }, [isConnected, sendCommand]);
+  }, [connectedDevice, sendCommand]);
 
   /**
    * Get current engine RPM
    */
   const getEngineRPM = useCallback(async () => {
-    if (!isConnected) return null;
+    if (!connectedDevice) return null;
     try {
       const response = await sendCommand(STANDARD_PIDS.ENGINE_RPM);
       // Would need to convert the response to actual RPM value
@@ -74,13 +106,13 @@ export const useECUCommands = () => {
       console.error('Failed to get RPM:', error);
       return null;
     }
-  }, [isConnected, sendCommand]);
+  }, [connectedDevice, sendCommand]);
 
   /**
    * Get current vehicle speed in km/h
    */
   const getVehicleSpeed = useCallback(async () => {
-    if (!isConnected) return null;
+    if (!connectedDevice) return null;
     try {
       const response = await sendCommand(STANDARD_PIDS.VEHICLE_SPEED);
       return response;
@@ -88,13 +120,13 @@ export const useECUCommands = () => {
       console.error('Failed to get speed:', error);
       return null;
     }
-  }, [isConnected, sendCommand]);
+  }, [connectedDevice, sendCommand]);
 
   /**
    * Get current engine coolant temperature
    */
   const getEngineCoolantTemp = useCallback(async () => {
-    if (!isConnected) return null;
+    if (!connectedDevice) return null;
     try {
       const response = await sendCommand(STANDARD_PIDS.ENGINE_COOLANT_TEMP);
       return response;
@@ -102,13 +134,13 @@ export const useECUCommands = () => {
       console.error('Failed to get coolant temp:', error);
       return null;
     }
-  }, [isConnected, sendCommand]);
+  }, [connectedDevice, sendCommand]);
 
   /**
    * Get battery voltage
    */
   const getBatteryVoltage = useCallback(async () => {
-    if (!isConnected) return null;
+    if (!connectedDevice) return null;
     try {
       const response = await sendCommand(ELM_COMMANDS.READ_VOLTAGE);
       return response;
@@ -116,13 +148,13 @@ export const useECUCommands = () => {
       console.error('Failed to get battery voltage:', error);
       return null;
     }
-  }, [isConnected, sendCommand]);
+  }, [connectedDevice, sendCommand]);
 
   /**
    * Get diagnostic trouble codes (DTCs)
    */
   const getTroubleCodes = useCallback(async () => {
-    if (!isConnected) return null;
+    if (!connectedDevice) return null;
     try {
       // Mode 03 retrieves confirmed DTCs
       const response = await sendCommand('03');
@@ -131,13 +163,13 @@ export const useECUCommands = () => {
       console.error('Failed to get trouble codes:', error);
       return null;
     }
-  }, [isConnected, sendCommand]);
+  }, [connectedDevice, sendCommand]);
 
   /**
    * Clear diagnostic trouble codes
    */
   const clearTroubleCodes = useCallback(async () => {
-    if (!isConnected) return false;
+    if (!connectedDevice) return false;
     try {
       // Mode 04 clears DTCs
       await sendCommand('04');
@@ -146,26 +178,26 @@ export const useECUCommands = () => {
       console.error('Failed to clear trouble codes:', error);
       return false;
     }
-  }, [isConnected, sendCommand]);
+  }, [connectedDevice, sendCommand]);
 
   /**
    * Create raw data connector for custom implementations
    */
   const getRawConnector = useCallback((): ECUConnector | null => {
-    if (!isConnected || !sendCommand) return null;
+    if (!connectedDevice || !sendCommand) return null;
     return createRawECUConnector(sendCommand);
-  }, [isConnected, sendCommand]);
+  }, [connectedDevice, sendCommand]);
 
   /**
    * Create decoded data connector for custom implementations
    */
   const getDecodedConnector = useCallback((): ECUConnector | null => {
-    if (!isConnected || !sendCommand) return null;
+    if (!connectedDevice || !sendCommand) return null;
     return createDecodedECUConnector(sendCommand);
-  }, [isConnected, sendCommand]);
+  }, [connectedDevice, sendCommand]);
 
   return {
-    initializeOBD,
+    initializeECU,
     getVIN,
     getEngineRPM,
     getVehicleSpeed,
@@ -175,5 +207,6 @@ export const useECUCommands = () => {
     clearTroubleCodes,
     getRawConnector,
     getDecodedConnector,
+    isReady: !!connectedDevice && !!connectionDetails
   };
 };

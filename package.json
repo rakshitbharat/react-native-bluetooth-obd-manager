@@ -30,7 +30,8 @@
     "react-native-ble-manager": "^10.0.0",
     "react-native-permissions": "^3.8.0",
     "convert-string": "^0.1.0",
-    "text-decoding": "^1.0.0"
+    "text-decoding": "^1.0.0",
+    "rxjs": "^7.8.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
