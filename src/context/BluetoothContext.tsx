@@ -14,6 +14,11 @@ export const BluetoothContext = createContext<any>(null);
 const BleManagerModule = NativeModules.BleManager;
 const bleEmitter = new NativeEventEmitter(BleManagerModule);
 
+// Constants
+const CONNECTION_RETRY_ATTEMPTS = 3;
+const CONNECTION_RETRY_DELAY = 1000;
+const COMMAND_DEFAULT_TIMEOUT = 4000;
+
 // Singleton for BLE data receiver
 class BLEDataReceiver {
   static instance: BLEDataReceiver;
@@ -21,6 +26,8 @@ class BLEDataReceiver {
   rawResponseBuffer: number[] = [];
   rawCompleteResponse: number[] | null = null;
   completeResponseReceived: boolean = false;
+  lastError: Error | null = null;
+  receiveStartTime: number = 0;
 
   static getInstance(): BLEDataReceiver {
     if (!BLEDataReceiver.instance) {
@@ -29,25 +36,52 @@ class BLEDataReceiver {
     return BLEDataReceiver.instance;
   }
 
-  updateValueFromCharacteristic(data: { value: number[] }) {
-    if (!data.value) return;
+  startReceiving(): void {
+    this.reset();
+    this.receiveStartTime = Date.now();
+  }
+
+  updateValueFromCharacteristic(data: { value: number[] }): boolean {
+    if (!data.value) return false;
     
-    this.rawResponseBuffer.push(...data.value);
-    const decodedValue = decodeData(data.value);
-    this.responseBuffer += decodedValue;
-    
-    // Check if we've received a complete response (contains '>')
-    if (isResponseComplete(this.responseBuffer)) {
-      this.rawCompleteResponse = [...this.rawResponseBuffer];
-      this.completeResponseReceived = true;
+    try {
+      this.rawResponseBuffer.push(...data.value);
+      const decodedValue = decodeData(data.value);
+      this.responseBuffer += decodedValue;
+      
+      // Check if we've received a complete response (contains '>')
+      if (isResponseComplete(this.responseBuffer)) {
+        this.rawCompleteResponse = [...this.rawResponseBuffer];
+        this.completeResponseReceived = true;
+        return true;
+      }
+
+      // Check for timeout based on time since start
+      if (Date.now() - this.receiveStartTime > COMMAND_DEFAULT_TIMEOUT) {
+        throw new Error('Response timeout');
+      }
+
+      return false;
+    } catch (error) {
+      this.lastError = error as Error;
+      return false;
     }
   }
 
-  reset() {
+  reset(): void {
     this.responseBuffer = '';
     this.rawResponseBuffer = [];
     this.rawCompleteResponse = null;
     this.completeResponseReceived = false;
+    this.lastError = null;
+    this.receiveStartTime = 0;
+  }
+
+  getResponse(): { response: string; error: Error | null } {
+    return {
+      response: this.responseBuffer,
+      error: this.lastError
+    };
   }
 }
 

@@ -1,6 +1,6 @@
 # React Native Bluetooth OBD Manager
 
-A comprehensive library for seamless communication with ELM327 OBD-II devices via Bluetooth in React Native applications.
+An out-of-the-box solution for communicating with ELM327 OBD-II adapters in React Native applications. This library handles all the complexities of Bluetooth communication and OBD protocol management, letting you focus on building your vehicle diagnostic app.
 
 ## Features
 
@@ -23,82 +23,113 @@ yarn add react-native-bluetooth-obd-manager
 
 ### Dependencies
 
-This library requires the following dependencies:
+The library requires the following peer dependencies:
 
 ```bash
-npm install react-native-ble-manager react-native-permissions convert-string text-decoding
+npm install react-native-ble-manager react-native-permissions
+# or
+yarn add react-native-ble-manager react-native-permissions
+```
+
+### iOS Setup
+
+1. Add the following to your `Info.plist`:
+```xml
+<key>NSBluetoothAlwaysUsageDescription</key>
+<string>Your app needs Bluetooth to communicate with OBD devices</string>
+<key>NSBluetoothPeripheralUsageDescription</key>
+<string>Your app needs Bluetooth to communicate with OBD devices</string>
+```
+
+2. Install pods:
+```bash
+cd ios && pod install
+```
+
+### Android Setup
+
+1. Add the following permissions to your `AndroidManifest.xml`:
+```xml
+<uses-permission android:name="android.permission.BLUETOOTH"/>
+<uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<!-- For Android 12+ -->
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
+<uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
 ```
 
 ## Basic Usage
 
-```jsx
-import React, { useEffect, useState } from 'react';
-import { View, Text, Button } from 'react-native';
-import { BluetoothProvider, useBluetooth, useECUCommands } from 'react-native-bluetooth-obd-manager';
+1. Wrap your app with BluetoothProvider:
 
-// Wrap your app with the BluetoothProvider
-const App = () => {
+```jsx
+import { BluetoothProvider } from 'react-native-bluetooth-obd-manager';
+
+export default function App() {
   return (
     <BluetoothProvider>
-      <OBDScreen />
+      <YourApp />
     </BluetoothProvider>
   );
-};
+}
+```
 
-// Use the hooks in your components
-const OBDScreen = () => {
-  const [rpm, setRpm] = useState(null);
-  const [speed, setSpeed] = useState(null);
+2. Use the included scanner component to get started quickly:
+
+```jsx
+import { OBDDeviceScanner } from 'react-native-bluetooth-obd-manager';
+
+export default function ScanScreen() {
+  return <OBDDeviceScanner />;
+}
+```
+
+3. Or use the hooks for custom implementation:
+
+```jsx
+import { useBluetooth } from 'react-native-bluetooth-obd-manager';
+
+function CustomScanner() {
   const { 
-    isBluetoothOn, 
-    hasPermissions, 
-    scanDevices, 
-    connectToDevice, 
-    connectedDevice 
+    isBluetoothOn,
+    hasPermissions,
+    scanDevices,
+    connectToDevice,
+    sendCommand
   } = useBluetooth();
-  const { initializeOBD, getEngineRPM, getVehicleSpeed } = useECUCommands();
 
-  // Handle connection to a device
-  const connectToOBD = async (deviceId) => {
-    const connected = await connectToDevice(deviceId);
-    if (connected) {
-      await initializeOBD();
-    }
-  };
-
-  // Fetch vehicle data
-  const fetchData = async () => {
-    const rpmData = await getEngineRPM();
-    const speedData = await getVehicleSpeed();
-    setRpm(rpmData);
-    setSpeed(speedData);
+  const handleScan = async () => {
+    if (!isBluetoothOn || !hasPermissions) return;
+    await scanDevices();
   };
 
   return (
-    <View>
-      <Text>Bluetooth: {isBluetoothOn ? 'ON' : 'OFF'}</Text>
-      <Text>Permissions: {hasPermissions ? 'Granted' : 'Not Granted'}</Text>
-      <Text>Connected: {connectedDevice ? 'Yes' : 'No'}</Text>
-
-      <Button title="Scan" onPress={() => scanDevices()} />
-      <Button 
-        title="Connect" 
-        onPress={() => connectToOBD('00:11:22:33:44:55')} 
-        disabled={!isBluetoothOn || !hasPermissions}
-      />
-      <Button 
-        title="Fetch Data" 
-        onPress={fetchData} 
-        disabled={!connectedDevice}
-      />
-
-      <Text>RPM: {rpm}</Text>
-      <Text>Speed: {speed}</Text>
-    </View>
+    <Button title="Scan for Devices" onPress={handleScan} />
   );
-};
+}
+```
 
-export default App;
+## Example Components
+
+The library includes three ready-to-use components:
+
+1. **OBDDeviceScanner**: For discovering and connecting to OBD devices
+2. **OBDLiveData**: For monitoring real-time vehicle data
+3. **OBDTerminal**: For direct AT and OBD command interface
+
+To use them:
+
+```jsx
+import { 
+  OBDDeviceScanner,
+  OBDLiveData,
+  OBDTerminal
+} from 'react-native-bluetooth-obd-manager';
+
+// In your navigation/screens:
+<OBDDeviceScanner />  // For device discovery
+<OBDLiveData />       // For real-time monitoring
+<OBDTerminal />       // For direct command interface
 ```
 
 ## Advanced Usage
@@ -312,6 +343,24 @@ const speed = parseVehicleSpeed(speedResponse); // Returns number value in km/h
 
 4. **Response Timeouts**: If commands consistently time out, try increasing the timeout value passed to `sendCommand()`.
 
+### Debug Mode
+
+Enable debug mode for detailed logs:
+
+```jsx
+<BluetoothProvider debug={true}>
+  <YourApp />
+</BluetoothProvider>
+```
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
 ## License
 
 MIT
+
+## Support
+
+For issues and feature requests, please use the [GitHub issue tracker](https://github.com/yourusername/react-native-bluetooth-obd-manager/issues).

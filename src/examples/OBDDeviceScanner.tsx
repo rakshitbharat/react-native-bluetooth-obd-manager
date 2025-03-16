@@ -1,242 +1,163 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { useBluetooth } from '../hooks/useBluetooth';
-import { useDeviceDetection } from '../hooks/useDeviceDetection';
-import { useECUCommands } from '../hooks/useECUCommands';
-import { Peripheral } from 'react-native-ble-manager';
-import { STANDARD_PIDS } from '../utils/obdUtils';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
+import { useBluetooth } from '../context/BluetoothContext';
+import { ELM_COMMANDS } from '../utils/obdUtils';
 
-const OBDDeviceScanner: React.FC = () => {
-  const [vehicleData, setVehicleData] = useState<Record<string, string>>({});
-  
-  // Get Bluetooth state and functions
+interface DeviceItemProps {
+  name: string;
+  id: string;
+  rssi?: number;
+  onPress: () => void;
+}
+
+const DeviceItem: React.FC<DeviceItemProps> = ({ name, id, rssi, onPress }) => (
+  <TouchableOpacity style={styles.deviceItem} onPress={onPress}>
+    <View>
+      <Text style={styles.deviceName}>{name || 'Unknown Device'}</Text>
+      <Text style={styles.deviceId}>{id}</Text>
+    </View>
+    {rssi && <Text style={styles.rssi}>{rssi} dBm</Text>}
+  </TouchableOpacity>
+);
+
+export const OBDDeviceScanner: React.FC = () => {
   const {
     isBluetoothOn,
     hasPermissions,
-    isConnected,
+    isScanning,
+    discoveredDevices,
     connectedDevice,
-    requestPermissions,
+    scanDevices,
+    connectToDevice,
     disconnect,
-    connectToDevice
+    sendCommand,
+    requestPermissions,
   } = useBluetooth();
 
-  // Use device detection hook
-  const {
-    startDeviceScan,
-    isScanning,
-    obdDevices,
-    selectedDevice,
-    setSelectedDevice
-  } = useDeviceDetection();
+  const [initializingDevice, setInitializingDevice] = useState(false);
+  const [deviceInfo, setDeviceInfo] = useState<string>('');
 
-  // Get ECU commands
-  const {
-    initializeOBD,
-    getVIN,
-    getEngineRPM,
-    getVehicleSpeed,
-    getEngineCoolantTemp,
-    getBatteryVoltage
-  } = useECUCommands();
+  // Request permissions on mount if needed
+  useEffect(() => {
+    if (!hasPermissions) {
+      requestPermissions();
+    }
+  }, [hasPermissions]);
 
-  // Handle scan button press
-  const handleScan = async () => {
+  // Start a device scan
+  const handleStartScan = async () => {
     if (!isBluetoothOn) {
-      alert('Please turn on Bluetooth');
+      setDeviceInfo('Please turn on Bluetooth');
       return;
     }
-
     if (!hasPermissions) {
-      const granted = await requestPermissions();
-      if (!granted) {
-        alert('Bluetooth permissions are required');
+      setDeviceInfo('Bluetooth permissions required');
+      return;
+    }
+    await scanDevices(5000); // Scan for 5 seconds
+  };
+
+  // Connect to a device and initialize it
+  const handleDevicePress = async (deviceId: string) => {
+    try {
+      setInitializingDevice(true);
+      setDeviceInfo('Connecting...');
+
+      const connected = await connectToDevice(deviceId);
+      if (!connected) {
+        setDeviceInfo('Failed to connect');
         return;
       }
-    }
 
-    await startDeviceScan(10000); // 10 second scan
-  };
+      setDeviceInfo('Connected. Initializing OBD...');
 
-  // Handle device selection
-  const selectDevice = (device: Peripheral) => {
-    setSelectedDevice(device);
-  };
+      // Initialize the OBD device
+      try {
+        // Reset the device
+        await sendCommand(ELM_COMMANDS.RESET);
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-  // Handle device connection
-  const handleConnect = async () => {
-    if (!selectedDevice) return;
-    
-    try {
-      // Fixed: Use the connectToDevice function directly from the hook
-      const success = await connectToDevice(selectedDevice.id);
-      
-      if (success) {
-        // Initialize OBD communication
-        await initializeOBD();
+        // Turn off echo
+        await sendCommand(ELM_COMMANDS.ECHO_OFF);
+        
+        // Turn off line feeds
+        await sendCommand(ELM_COMMANDS.LINEFEEDS_OFF);
+        
+        // Get device info
+        const version = await sendCommand(ELM_COMMANDS.GET_VERSION);
+        setDeviceInfo(`Connected: ${version}`);
+      } catch (error) {
+        console.error('Error initializing device:', error);
+        setDeviceInfo('Error initializing device');
+        await disconnect(deviceId);
       }
     } catch (error) {
-      console.error('Connection error:', error);
-      alert('Failed to connect to device');
+      console.error('Error connecting to device:', error);
+      setDeviceInfo('Connection failed');
+    } finally {
+      setInitializingDevice(false);
     }
   };
 
-  // Handle device disconnection
+  // Disconnect from current device
   const handleDisconnect = async () => {
-    if (!connectedDevice) return;
-    await disconnect(connectedDevice.id);
-  };
-
-  // Fetch basic vehicle data
-  const fetchVehicleData = async () => {
-    if (!isConnected) return;
-    
-    setVehicleData({ status: 'Loading...' });
-    
-    try {
-      const results: Record<string, string> = {};
-      
-      // Get VIN
-      const vin = await getVIN();
-      results.vin = vin || 'Not available';
-      
-      // Get battery voltage
-      const batteryVoltage = await getBatteryVoltage();
-      results.batteryVoltage = batteryVoltage || 'Not available';
-      
-      // Get engine RPM if engine is running
-      const rpm = await getEngineRPM();
-      results.rpm = rpm || 'Not available';
-      
-      // Get vehicle speed
-      const speed = await getVehicleSpeed();
-      results.speed = speed || 'Not available';
-      
-      // Get coolant temperature
-      const coolantTemp = await getEngineCoolantTemp();
-      results.coolantTemp = coolantTemp || 'Not available';
-      
-      setVehicleData(results);
-    } catch (error) {
-      console.error('Error fetching vehicle data:', error);
-      setVehicleData({ error: 'Failed to fetch data' });
+    if (connectedDevice) {
+      await disconnect(connectedDevice.id);
+      setDeviceInfo('');
     }
-  };
-
-  // Render device item
-  const renderDeviceItem = ({ item }: { item: Peripheral }) => {
-    const isSelected = selectedDevice?.id === item.id;
-    
-    return (
-      <TouchableOpacity 
-        style={[styles.deviceItem, isSelected && styles.selectedDevice]} 
-        onPress={() => selectDevice(item)}
-      >
-        <Text style={styles.deviceName}>{item.name || 'Unknown Device'}</Text>
-        <Text style={styles.deviceId}>{item.id}</Text>
-      </TouchableOpacity>
-    );
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>OBD Device Scanner</Text>
-      
-      {/* Status display */}
-      <View style={styles.statusContainer}>
-        <Text style={styles.statusItem}>
-          Bluetooth: <Text style={isBluetoothOn ? styles.statusOn : styles.statusOff}>
-            {isBluetoothOn ? 'ON' : 'OFF'}
-          </Text>
-        </Text>
-        <Text style={styles.statusItem}>
-          Permissions: <Text style={hasPermissions ? styles.statusOn : styles.statusOff}>
-            {hasPermissions ? 'GRANTED' : 'DENIED'}
-          </Text>
-        </Text>
-        <Text style={styles.statusItem}>
-          Connected: <Text style={isConnected ? styles.statusOn : styles.statusOff}>
-            {isConnected ? 'YES' : 'NO'}
-          </Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>OBD Device Scanner</Text>
+        <Text style={styles.status}>
+          Bluetooth: {isBluetoothOn ? 'On' : 'Off'} • 
+          Permissions: {hasPermissions ? 'Granted' : 'Not Granted'}
         </Text>
       </View>
-      
-      {/* Scan Controls */}
-      <View style={styles.scanContainer}>
-        <TouchableOpacity 
-          style={[styles.button, (!isBluetoothOn || isScanning) && styles.disabledButton]} 
-          onPress={handleScan}
-          disabled={!isBluetoothOn || isScanning}
-        >
-          <Text style={styles.buttonText}>
-            {isScanning ? 'Scanning...' : 'Scan for OBD Devices'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-      
-      {/* Device List */}
-      {(obdDevices.length > 0 || isScanning) && (
-        <View style={styles.listContainer}>
-          <Text style={styles.sectionTitle}>OBD Devices</Text>
-          
-          {isScanning && (
-            <ActivityIndicator size="large" color="#2196F3" />
-          )}
-          
-          {obdDevices.length === 0 && !isScanning && (
-            <Text style={styles.emptyText}>No OBD devices found</Text>
-          )}
-          
-          <FlatList
-            data={obdDevices}
-            keyExtractor={(item) => item.id}
-            renderItem={renderDeviceItem}
-          />
-          
-          {selectedDevice && !isConnected && (
-            <TouchableOpacity 
-              style={[styles.button, styles.secondaryButton]} 
-              onPress={handleConnect}
-            >
-              <Text style={styles.buttonText}>
-                Connect to {selectedDevice.name || 'Selected Device'}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-      
-      {/* Connected Device Info */}
-      {isConnected && connectedDevice && (
-        <View style={styles.connectionContainer}>
-          <Text style={styles.sectionTitle}>Connected to {connectedDevice.name || 'OBD Device'}</Text>
-          
+
+      <View style={styles.controls}>
+        {!connectedDevice ? (
           <TouchableOpacity 
-            style={[styles.button, styles.secondaryButton]} 
-            onPress={fetchVehicleData}
+            style={[styles.button, isScanning && styles.buttonDisabled]} 
+            onPress={handleStartScan}
+            disabled={isScanning}
           >
-            <Text style={styles.buttonText}>Fetch Vehicle Data</Text>
+            <Text style={styles.buttonText}>
+              {isScanning ? 'Scanning...' : 'Scan for Devices'}
+            </Text>
           </TouchableOpacity>
-          
-          {Object.keys(vehicleData).length > 0 && (
-            <View style={styles.dataContainer}>
-              {Object.entries(vehicleData).map(([key, value]) => (
-                <Text key={key} style={styles.dataItem}>
-                  {key}: {value}
-                </Text>
-              ))}
-            </View>
-          )}
-          
-          <View style={styles.buttonGroup}>
-            <TouchableOpacity 
-              style={[styles.button, styles.dangerButton]} 
-              onPress={handleDisconnect}
-            >
-              <Text style={styles.buttonText}>Disconnect</Text>
-            </TouchableOpacity>
-          </View>
+        ) : (
+          <TouchableOpacity 
+            style={styles.button} 
+            onPress={handleDisconnect}
+          >
+            <Text style={styles.buttonText}>Disconnect</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {deviceInfo ? (
+        <View style={styles.infoBox}>
+          <Text style={styles.infoText}>{deviceInfo}</Text>
+          {initializingDevice && <ActivityIndicator style={styles.spinner} />}
         </View>
-      )}
+      ) : null}
+
+      <FlatList
+        data={discoveredDevices}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => (
+          <DeviceItem
+            name={item.name}
+            id={item.id}
+            rssi={item.rssi}
+            onPress={() => handleDevicePress(item.id)}
+          />
+        )}
+        style={styles.list}
+      />
     </View>
   );
 };
@@ -245,110 +166,81 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#F5F5F5',
+  },
+  header: {
+    marginBottom: 16,
   },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 16,
-    textAlign: 'center',
+    marginBottom: 8,
   },
-  statusContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: 'white',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 16,
-    elevation: 2,
-  },
-  statusItem: {
+  status: {
     fontSize: 14,
+    color: '#666',
   },
-  statusOn: {
-    color: 'green',
-    fontWeight: 'bold',
-  },
-  statusOff: {
-    color: 'red',
-    fontWeight: 'bold',
-  },
-  scanContainer: {
+  controls: {
+    flexDirection: 'row',
     marginBottom: 16,
   },
   button: {
     backgroundColor: '#2196F3',
     padding: 12,
     borderRadius: 8,
-    alignItems: 'center',
+    flex: 1,
+  },
+  buttonDisabled: {
+    backgroundColor: '#BDBDBD',
   },
   buttonText: {
     color: 'white',
-    fontWeight: 'bold',
-  },
-  disabledButton: {
-    backgroundColor: '#B0BEC5',
-  },
-  secondaryButton: {
-    backgroundColor: '#4CAF50',
-  },
-  dangerButton: {
-    backgroundColor: '#F44336',
-  },
-  listContainer: {
-    flex: 1,
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 16,
-    elevation: 2,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  emptyText: {
     textAlign: 'center',
-    fontStyle: 'italic',
-    marginTop: 20,
-    color: '#757575',
+    fontWeight: 'bold',
+  },
+  list: {
+    flex: 1,
   },
   deviceItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  selectedDevice: {
-    backgroundColor: '#E3F2FD',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: 'white',
+    marginBottom: 8,
+    borderRadius: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   deviceName: {
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  deviceId: {
-    color: '#757575',
-    fontSize: 12,
-  },
-  connectionContainer: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 2,
-  },
-  dataContainer: {
-    marginTop: 16,
-    marginBottom: 16,
-  },
-  dataItem: {
-    fontSize: 14,
     marginBottom: 4,
   },
-  buttonGroup: {
+  deviceId: {
+    fontSize: 12,
+    color: '#666',
+  },
+  rssi: {
+    fontSize: 12,
+    color: '#2196F3',
+  },
+  infoBox: {
+    backgroundColor: '#E3F2FD',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 16,
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  infoText: {
+    flex: 1,
+    color: '#1976D2',
+  },
+  spinner: {
+    marginLeft: 8,
   },
 });
-
-export default OBDDeviceScanner;

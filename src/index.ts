@@ -1,53 +1,28 @@
-import { BluetoothProvider, useBluetooth } from './context/BluetoothContext';
-import { ConnectionDetails } from './types/bluetoothTypes';
-import { useECUCommands } from './hooks/useECUCommands';
-import { useDeviceDetection } from './hooks/useDeviceDetection';
-import { useOBDManager } from './hooks/useOBDManager';
-import { 
-  ELM_COMMANDS, 
-  STANDARD_PIDS, 
-  OBD_SERVICE_MODES,
-  createRawECUConnector,
-  createDecodedECUConnector
-} from './utils/obdUtils';
-import OBDManager, { ConnectionState, OBDEventType, OBDProtocol } from './managers/OBDManager';
-import DeviceManager from './managers/DeviceManager';
-import { parseEngineRPM, parseVehicleSpeed, parseEngineCoolantTemp, parseThrottlePosition, parseDTCResponse } from './utils/obdDataUtils';
+// Core context and hooks
+export { BluetoothProvider, useBluetooth } from './context/BluetoothContext';
+export { useOBDManager } from './hooks/useOBDManager';
+export { useDeviceDetection } from './hooks/useDeviceDetection';
+export { useECUCommands } from './hooks/useECUCommands';
 
-// Export main components
-export { 
-  // Core components
-  BluetoothProvider, 
-  useBluetooth,
-  ConnectionDetails,
-  
-  // Hooks
-  useECUCommands,
-  useDeviceDetection,
-  useOBDManager,
-  
-  // Managers
-  OBDManager,
-  DeviceManager,
-  
-  // Manager types
-  ConnectionState,
-  OBDEventType,
-  OBDProtocol,
-  
-  // Utilities
-  ELM_COMMANDS,
-  STANDARD_PIDS,
-  OBD_SERVICE_MODES,
-  createRawECUConnector,
-  createDecodedECUConnector,
-  
-  // Data parsing utilities
-  parseEngineRPM,
-  parseVehicleSpeed,
-  parseEngineCoolantTemp,
-  parseThrottlePosition,
-  parseDTCResponse
-};
+// Example components
+export { OBDDeviceScanner } from './examples/OBDDeviceScanner';
+export { OBDLiveData } from './examples/OBDLiveData';
+export { OBDTerminal } from './examples/OBDTerminal';
+
+// Types
+export type { ConnectionDetails, BluetoothState } from './types/bluetoothTypes';
+export { BluetoothActionType } from './types/bluetoothTypes';
+
+// Managers
+export { default as OBDManager } from './managers/OBDManager';
+export { default as DeviceManager } from './managers/DeviceManager';
+export { ConnectionState, OBDEventType, OBDProtocol } from './managers/OBDManager';
+
+// Utilities
+export { ELM_COMMANDS, STANDARD_PIDS } from './utils/obdUtils';
+export { findServiceAndCharacteristic } from './utils/deviceUtils';
+export { decodeData, encodeCommand, isResponseComplete, formatResponse } from './utils/dataUtils';
+export { logBluetoothError, BluetoothErrorType } from './utils/errorUtils';
+export { requestBluetoothPermissions, checkBluetoothState } from './utils/permissionUtils';
 
 export default BluetoothProvider;
