@@ -395,9 +395,60 @@ try {
 - Bluetooth LE capable device
 - ELM327-compatible OBD-II adapter
 
+## Development and Testing
+
+### Setting Up Development Environment
+
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Build the library:
+   ```bash
+   npm run build
+   ```
+
+### Running Tests
+
+This project uses Jest for testing. To run the tests:
+
+```bash
+# Run all tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Generate coverage report
+npm run test:coverage
+```
+
+### Code Quality Tools
+
+- **ESLint**: `npm run lint`
+- **Prettier**: `npm run prettier`
+- **Validate all**: `npm run validate`
+
+### Pre-commit Hooks
+
+This project uses Husky to run pre-commit hooks that:
+- Lint staged files
+- Format code with Prettier
+- Run tests before pushing
+
+These hooks ensure code quality is maintained throughout the project.
+
+### CI/CD
+
+This project uses GitHub Actions for continuous integration and delivery:
+
+- **CI Workflow**: Runs on every pull request and push to main branches
+- **Release Workflow**: Automatically publishes to npm when a new version tag is pushed
+
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on how to submit pull requests, report issues, and suggest enhancements.
 
 ## License
 
