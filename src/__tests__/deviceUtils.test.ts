@@ -1,8 +1,7 @@
-import { 
-  findServiceAndCharacteristic,
-  isOBDDevice,
-  getDeviceName
-} from '../utils/deviceUtils';
+import { it, describe, expect } from '@jest/globals';
+import { Peripheral, PeripheralInfo } from 'react-native-ble-manager';
+import { findServiceAndCharacteristic, isOBDDevice, getDeviceName } from '../utils/deviceUtils';
+import { ConnectionDetails } from '../types/bluetoothTypes';
 
 // Mock Platform
 jest.mock('react-native', () => ({
@@ -11,8 +10,52 @@ jest.mock('react-native', () => ({
   },
 }));
 
+// Mock BleManager
+jest.mock('react-native-ble-manager', () => ({
+  retrieveServices: jest.fn(),
+}));
+
 describe('deviceUtils', () => {
+  // Test device data with proper types
+  const mockDevice: Partial<Peripheral> = {
+    id: 'test-device',
+    name: 'OBD Scanner',
+    rssi: -60,
+  };
+
+  const mockPeripheralInfo: Partial<PeripheralInfo> = {
+    id: 'test-device',
+    services: [
+      { uuid: 'FFE0', isPrimary: true }
+    ],
+    characteristics: [
+      {
+        service: 'FFE0',
+        characteristic: 'FFE1',
+        properties: {
+          Write: true,
+          Notify: true
+        }
+      }
+    ]
+  };
+
+  // Rest of test cases with proper types
   describe('findServiceAndCharacteristic', () => {
+    it('should find compatible service and characteristics', async () => {
+      const expectedDetails: ConnectionDetails = {
+        serviceUUID: 'FFE0',
+        writeCharacteristicUUID: 'FFE1',
+        notifyCharacteristicUUID: 'FFE1',
+        writeWithResponse: true
+      };
+
+      jest.spyOn(BleManager, 'retrieveServices').mockResolvedValue(mockPeripheralInfo);
+
+      const result = await findServiceAndCharacteristic('test-device');
+      expect(result).toEqual(expectedDetails);
+    });
+
     it('should find service and characteristics for standard OBD device', async () => {
       const device = {
         services: [
@@ -142,6 +185,10 @@ describe('deviceUtils', () => {
       expect(isOBDDevice({ name: null })).toBe(false);
       expect(isOBDDevice({})).toBe(false);
       expect(isOBDDevice(null as any)).toBe(false);
+    });
+
+    it('should identify OBD devices by name', () => {
+      expect(isOBDDevice(mockDevice as Peripheral)).toBe(true);
     });
   });
 

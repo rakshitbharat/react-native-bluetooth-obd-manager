@@ -12,8 +12,8 @@ export interface BluetoothState {
   isBluetoothOn: boolean;
   hasPermissions: boolean;
   isScanning: boolean;
-  discoveredDevices: any[];
-  connectedDevice: any | null;
+  discoveredDevices: Peripheral[];
+  connectedDevice: Peripheral | null;
   connectionDetails: ConnectionDetails | null;
   isStreaming: boolean;
   pendingCommand: string | null;

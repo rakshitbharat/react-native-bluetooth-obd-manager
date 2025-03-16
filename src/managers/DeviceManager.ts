@@ -1,8 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Peripheral } from 'react-native-ble-manager';
 
-import { ConnectionDetails } from '../types/bluetoothTypes';
-
 // Storage keys
 const STORAGE_KEYS = {
   LAST_DEVICE: '@OBDManager:lastDevice',
@@ -27,7 +25,9 @@ export class DeviceManager {
   private knownDevices: KnownDevice[] = [];
   private lastConnectedDevice: string | null = null;
 
-  private constructor() {}
+  private constructor() {
+    // Private constructor for singleton pattern - initialization happens through getInstance()
+  }
 
   /**
    * Get the singleton instance

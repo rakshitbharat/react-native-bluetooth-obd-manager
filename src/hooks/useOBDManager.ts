@@ -12,6 +12,11 @@ interface OBDManagerState {
   isInitializing: boolean;
 }
 
+interface OBDEventData {
+  message?: string;
+  data?: unknown;
+}
+
 /**
  * Hook for interacting with the OBD Manager
  */
@@ -79,7 +84,7 @@ export const useOBDManager = () => {
   
   // Register for OBD events
   useEffect(() => {
-    const handleEvent = (event: OBDEventType, data?: any) => {
+    const handleEvent = (event: OBDEventType, data?: OBDEventData) => {
       switch (event) {
         case OBDEventType.CONNECTED:
           setState(current => ({

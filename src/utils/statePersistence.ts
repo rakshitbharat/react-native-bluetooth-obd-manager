@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import { ConnectionDetails } from '../types/bluetoothTypes';
 
 const STORAGE_PREFIX = '@OBDManager:';
@@ -25,22 +24,36 @@ export interface StoredDeviceState {
   lastConnected: number;
 }
 
+interface SerializableBluetoothState {
+  isBluetoothOn: boolean;
+  hasPermissions: boolean;
+  discoveredDevices: Array<{
+    id: string;
+    name: string;
+    rssi: number;
+  }>;
+}
+
+interface BluetoothState {
+  isBluetoothOn: boolean;
+  hasPermissions: boolean;
+  discoveredDevices: Peripheral[];
+}
+
 /**
  * Save full Bluetooth state including device preferences
  */
-export const saveBluetoothState = async (state: any): Promise<void> => {
+export const saveBluetoothState = async (state: BluetoothState): Promise<void> => {
   try {
-    const serializableState = {
+    const serializableState: SerializableBluetoothState = {
       isBluetoothOn: state.isBluetoothOn,
       hasPermissions: state.hasPermissions,
-      discoveredDevices:
-        state.discoveredDevices?.map((d: any) => ({
-          id: d.id,
-          name: d.name,
-          rssi: d.rssi,
-        })) || [],
+      discoveredDevices: state.discoveredDevices?.map(d => ({
+        id: d.id,
+        name: d.name || 'Unknown Device',
+        rssi: d.rssi || 0,
+      })) || [],
     };
-
     await AsyncStorage.setItem(KEYS.BLUETOOTH_STATE, JSON.stringify(serializableState));
   } catch (error) {
     console.error('Failed to save Bluetooth state:', error);
@@ -50,7 +63,7 @@ export const saveBluetoothState = async (state: any): Promise<void> => {
 /**
  * Load Bluetooth state from persistent storage
  */
-export const loadBluetoothState = async (): Promise<any> => {
+export const loadBluetoothState = async (): Promise<SerializableBluetoothState | null> => {
   try {
     const stateJson = await AsyncStorage.getItem(KEYS.BLUETOOTH_STATE);
     if (stateJson) {

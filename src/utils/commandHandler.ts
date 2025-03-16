@@ -1,7 +1,7 @@
-import { firstValueFrom, race, timer } from 'rxjs';
+import { firstValueFrom, timer } from 'rxjs';
 import { filter, map, takeUntil } from 'rxjs/operators';
 
-import { decodeData, encodeCommand } from './dataUtils';
+import { encodeCommand } from './dataUtils';
 import { BluetoothOBDError, BluetoothErrorType } from './errorUtils';
 import notificationHandler from './notificationHandler';
 

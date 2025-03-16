@@ -1,4 +1,4 @@
-import { BluetoothState, BluetoothActionType } from '../types/bluetoothTypes';
+import { BluetoothState, BluetoothActionType, BluetoothAction } from '../types/bluetoothTypes';
 
 export const initialState: BluetoothState = {
   isInitialized: false,
@@ -16,7 +16,7 @@ export const initialState: BluetoothState = {
 
 export const bluetoothReducer = (
   state: BluetoothState,
-  action: { type: BluetoothActionType; payload?: any },
+  action: BluetoothAction,
 ): BluetoothState => {
   switch (action.type) {
     case BluetoothActionType.INITIALIZE_SUCCESS:

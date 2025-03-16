@@ -50,7 +50,7 @@ export const OBDDeviceScanner: React.FC = () => {
     if (!hasPermissions) {
       requestPermissions();
     }
-  }, [hasPermissions]);
+  }, [hasPermissions, requestPermissions]);
 
   // Start a device scan
   const handleStartScan = async () => {

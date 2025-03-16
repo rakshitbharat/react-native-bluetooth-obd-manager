@@ -1,8 +1,6 @@
-import BleManager from 'react-native-ble-manager';
-
-import { encodeCommand, decodeData, isResponseComplete, formatResponse } from '../utils/dataUtils';
+import { BluetoothContext } from '../context/BluetoothContext';
+import { decodeData, formatResponse, isResponseComplete } from '../utils/dataUtils';
 import { BluetoothErrorType, BluetoothOBDError } from '../utils/errorUtils';
-import { ELM_COMMANDS } from '../utils/obdUtils';
 
 /**
  * Interface for any ECU connector implementation
@@ -17,7 +15,7 @@ export interface IECUConnector {
  * ECU Connector class for interacting with OBD devices
  */
 export class ECUConnector {
-  private context: any;
+  private context: BluetoothContext | null = null;
   private deviceId: string | null = null;
   private responseTimeout = 4000; // Default timeout in ms
   private isInitialized = false;
@@ -29,7 +27,7 @@ export class ECUConnector {
   /**
    * Set Bluetooth context to use for communication
    */
-  setContext(context: any): void {
+  setContext(context: BluetoothContext): void {
     this.context = context;
     this.isInitialized = true;
   }
@@ -138,7 +136,7 @@ export class BluetoothECUConnector implements IECUConnector {
   private timeoutId: NodeJS.Timeout | null = null;
   private responsePromise: Promise<string> | null = null;
   private responseResolver: ((value: string) => void) | null = null;
-  private responseRejector: ((reason: any) => void) | null = null;
+  private responseRejector: ((reason: Error) => void) | null = null;
   
   constructor(
     deviceId: string,
@@ -289,7 +287,7 @@ export class BluetoothECUConnector implements IECUConnector {
   /**
    * Process incoming notification data
    */
-  public handleNotification(data: number[]): void {
+  public handleNotification(data: Uint8Array): void {
     const value = decodeData(data);
     this.responseBuffer += value;
     

@@ -2,10 +2,17 @@ import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import BleManager from 'react-native-ble-manager';
 
 import { checkBluetoothPermissions, checkBluetoothState } from './permissionUtils';
-import { BluetoothActionType } from '../types/bluetoothTypes';
+import { BluetoothAction, BluetoothActionType } from '../types/bluetoothTypes';
 
 const BleManagerModule = NativeModules.BleManager;
 const bleEmitter = new NativeEventEmitter(BleManagerModule);
+
+interface CharacteristicData {
+  peripheral: string;
+  characteristic: string;
+  service: string;
+  value: number[];
+}
 
 /**
  * Initialize Bluetooth functionality
@@ -13,7 +20,7 @@ const bleEmitter = new NativeEventEmitter(BleManagerModule);
  * @returns Cleanup function to remove event listeners
  */
 export const initializeBluetooth = async (
-  dispatch: React.Dispatch<any>
+  dispatch: React.Dispatch<BluetoothAction>
 ): Promise<() => void> => {
   try {
     // Start the BLE Manager
@@ -98,7 +105,7 @@ export const setupNotifications = async (
   deviceId: string,
   serviceUUID: string,
   characteristicUUID: string,
-  dataHandler: (data: any) => void
+  dataHandler: (data: CharacteristicData) => void
 ): Promise<() => void> => {
   try {
     // Start notifications on the characteristic
@@ -131,3 +138,38 @@ export const setupNotifications = async (
     return () => {}; // Return empty cleanup function
   }
 };
+
+export async function startDeviceNotifications(
+  deviceId: string,
+  serviceUUID: string,
+  characteristicUUID: string,
+  dataHandler: (data: any) => void
+): Promise<() => void> {
+  try {
+    const bleEmitter = new NativeEventEmitter(BleManagerModule);
+    
+    // Setup notification listener
+    const dataListener = bleEmitter.addListener(
+      'BleManagerDidUpdateValueForCharacteristic',
+      (data) => {
+        if (data.peripheral === deviceId) {
+          dataHandler(data);
+        }
+      }
+    );
+    
+    // Return cleanup function
+    return () => {
+      dataListener.remove();
+      BleManager.stopNotification(deviceId, serviceUUID, characteristicUUID)
+        .catch((error) => {
+          console.warn('Error stopping notification:', error);
+        });
+    };
+  } catch (error) {
+    console.error('Failed to setup notifications:', error);
+    return () => {
+      // Cleanup not needed since setup failed
+    };
+  }
+}

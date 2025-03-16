@@ -125,7 +125,7 @@ export const useOBDMonitoring = (options: MonitoringOptions = {}) => {
     // Start the loop
     monitoringLoop();
     return true;
-  }, [isInitialized, isMonitoring, enabledPids, refreshRate, sendCommand]);
+  }, [isInitialized, isMonitoring, enabledPids, refreshRate, sendCommand, stopMonitoring]);
 
   // Stop monitoring
   const stopMonitoring = useCallback(() => {

@@ -1,5 +1,3 @@
-import { Peripheral } from 'react-native-ble-manager';
-
 import { ConnectionDetails } from '../types/bluetoothTypes';
 import { encodeCommand, isResponseComplete } from '../utils/dataUtils';
 import { findServiceAndCharacteristic } from '../utils/deviceUtils';
@@ -14,7 +12,9 @@ export class BluetoothMiddleware {
   private responseTimer: NodeJS.Timeout | null = null;
   private currentResponseTimeout = 4000; // Default timeout
 
-  private constructor() {}
+  private constructor() {
+    // Private constructor for singleton pattern - initialization happens through getInstance()
+  }
 
   /**
    * Get the singleton instance

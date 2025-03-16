@@ -1,14 +1,22 @@
-import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
-import BleManager from 'react-native-ble-manager';
-
+import BleManager, { Peripheral } from 'react-native-ble-manager';
 import { bluetoothReducer, initialState } from './bluetoothReducer';
-import { BluetoothActionType } from '../types/bluetoothTypes';
+import { BluetoothActionType, BluetoothState } from '../types/bluetoothTypes';
 import { decodeData, isResponseComplete, encodeCommand, formatResponse } from '../utils/dataUtils';
 import { requestBluetoothPermissions, checkBluetoothState } from '../utils/permissionUtils';
 
+interface BluetoothContextType extends BluetoothState {
+  scanDevices: (timeoutMs?: number) => Promise<boolean>;
+  connectToDevice: (deviceId: string) => Promise<boolean>;
+  disconnect: (deviceId: string) => Promise<boolean>;
+  sendCommand: (command: string, timeoutMs?: number) => Promise<string>;
+  requestPermissions: () => Promise<boolean>;
+  isConnected: boolean;
+}
+
 // Create the context
-export const BluetoothContext = createContext<any>(null);
+export const BluetoothContext = createContext<BluetoothContextType | null>(null);
 
 // BLE Manager module name
 const BleManagerModule = NativeModules.BleManager;
@@ -19,16 +27,7 @@ const CONNECTION_RETRY_ATTEMPTS = 3;
 const CONNECTION_RETRY_DELAY = 1000;
 const COMMAND_DEFAULT_TIMEOUT = 4000;
 
-// Common ELM327 service UUIDs
-const DEFAULT_SERVICE_UUID_SHORT = 'fff0';
-const DEFAULT_CHARACTERISTIC_UUID_SHORT = 'fff1';
-const DEFAULT_SERVICE_UUID =
-  Platform.OS === 'android' ? 'fff0' : '0000fff0-0000-1000-8000-00805f9b34fb';
-const DEFAULT_CHARACTERISTIC_UUID =
-  Platform.OS === 'android' ? 'fff1' : '0000fff1-0000-1000-8000-00805f9b34fb';
-const WRITE_CHARACTERISTIC =
-  Platform.OS === 'android' ? 'fff2' : '0000fff2-0000-1000-8000-00805f9b34fb';
-
+// Common ELM327 service UUIDs for reference - used in service discovery
 const OBD_SERVICE_UUIDS = [
   'FFF0', // Most common
   'FFE0', // Alternative service
@@ -37,13 +36,6 @@ const OBD_SERVICE_UUIDS = [
   'E7A1', // Another variant
   'FFE1', // Some Chinese clones
   'FFF1', // Another clone variant
-];
-
-const OBD_CHARACTERISTIC_UUIDS = [
-  'FFF1', // Most common
-  'FFE1', // Alternative
-  'FF01', // Generic
-  'E7A1', // Some older adapters
 ];
 
 // Singleton for BLE data receiver
@@ -132,35 +124,87 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     hasPermissions,
     connectedDevice,
     connectionDetails,
-    isScanning,
-    discoveredDevices,
     isStreaming,
     pendingCommand,
-    responseData,
-    error,
   } = state;
 
   // Keep track of command timeout
   const commandTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
   // Flag to track if we're currently establishing a connection
   const isConnectingRef = useRef<boolean>(false);
+
+  const disconnect = useCallback(async (deviceId: string) => {
+    if (!deviceId) return false;
+    try {
+      // Send reset command before disconnecting
+      try {
+        await sendCommand('ATZ');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.warn('Error sending reset command:', error);
+      }
+      // Stop scanning if active
+      await BleManager.stopScan();
+      // Stop notifications if active
+      if (connectedDevice && connectionDetails) {
+        try {
+          await BleManager.stopNotification(
+            deviceId,
+            connectionDetails.serviceUUID,
+            connectionDetails.notifyCharacteristicUUID,
+          );
+        } catch (error) {
+          console.warn('Error stopping notification:', error);
+        }
+      }
+      // Reset data receiver
+      dataReceiver.reset();
+      // Disconnect device
+      await BleManager.disconnect(deviceId);
+      // Small delay to ensure proper cleanup
+      await new Promise(resolve => setTimeout(resolve, 500));
+      dispatch({ type: BluetoothActionType.DISCONNECT_SUCCESS });
+      return true;
+    } catch (error) {
+      console.error('Disconnect failed:', error);
+      return false;
+    }
+  }, [connectedDevice, connectionDetails]);
+
+  // Handle data notifications from device
+  const handleNotification = useCallback((data: { value: number[]; peripheral: string }) => {
+    const { value, peripheral } = data;
+    if (!connectedDevice || peripheral !== connectedDevice.id) return;
+    
+    // Update data in our singleton receiver
+    dataReceiver.updateValueFromCharacteristic({ value });
+    
+    if (isStreaming && pendingCommand) {
+      const decodedData = decodeData(value);
+      dispatch({
+        type: BluetoothActionType.RECEIVE_DATA,
+        payload: decodedData,
+      });
+      // Check if this response is complete (contains '>')
+      if (isResponseComplete(decodedData)) {
+        dispatch({ type: BluetoothActionType.COMPLETE_COMMAND });
+      }
+    }
+  }, [connectedDevice, isStreaming, pendingCommand]);
 
   // Initialize BLE Manager
   useEffect(() => {
     const initializeBluetooth = async () => {
       try {
-        // Start BLE Manager
         await BleManager.start({ showAlert: false });
         dispatch({ type: BluetoothActionType.INITIALIZE_SUCCESS });
-
-        // Check initial Bluetooth state and permissions
+        
         const bluetoothState = await checkBluetoothState();
         dispatch({
           type: BluetoothActionType.UPDATE_BLUETOOTH_STATE,
           payload: bluetoothState,
         });
-
+        
         const permissions = await requestBluetoothPermissions();
         dispatch({
           type: BluetoothActionType.UPDATE_PERMISSIONS,
@@ -174,40 +218,34 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     initializeBluetooth();
 
-    // Cleanup
     return () => {
       BleManager.stopScan();
       if (connectedDevice) {
         disconnect(connectedDevice.id);
       }
     };
-  }, []);
+  }, [connectedDevice, disconnect]);
 
   // Set up Bluetooth event listeners
   useEffect(() => {
     if (!isInitialized) return;
 
-    // Listen for state changes (Bluetooth on/off)
     const stateChangeListener = bleEmitter.addListener('BleManagerDidUpdateState', ({ state }) => {
-      const isOn = state === 'on';
       dispatch({
         type: BluetoothActionType.UPDATE_BLUETOOTH_STATE,
-        payload: isOn,
+        payload: state === 'on',
       });
     });
 
-    // Listen for device disconnect events
     const disconnectListener = bleEmitter.addListener(
       'BleManagerDisconnectPeripheral',
       ({ peripheral }) => {
         if (connectedDevice && peripheral === connectedDevice.id) {
-          console.log('Device disconnected event received:', peripheral);
           dispatch({ type: BluetoothActionType.DISCONNECT_SUCCESS });
         }
       },
     );
 
-    // Listen for data received from device
     const dataListener = bleEmitter.addListener(
       'BleManagerDidUpdateValueForCharacteristic',
       handleNotification,
@@ -218,7 +256,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       disconnectListener.remove();
       dataListener.remove();
     };
-  }, [isInitialized, connectedDevice]);
+  }, [isInitialized, connectedDevice, handleNotification]);
 
   // Handle streaming timeout (to prevent hanging if no response received)
   useEffect(() => {
@@ -245,30 +283,6 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
     };
   }, [isStreaming]);
-
-  // Handle data notifications from device
-  const handleNotification = (data: any) => {
-    const { value, peripheral, characteristic, service } = data;
-
-    if (!connectedDevice || peripheral !== connectedDevice.id) return;
-
-    // Update data in our singleton receiver
-    dataReceiver.updateValueFromCharacteristic(data);
-
-    if (isStreaming && pendingCommand) {
-      const decodedData = decodeData(value);
-
-      dispatch({
-        type: BluetoothActionType.RECEIVE_DATA,
-        payload: decodedData,
-      });
-
-      // Check if this response is complete (contains '>')
-      if (isResponseComplete(decodedData)) {
-        dispatch({ type: BluetoothActionType.COMPLETE_COMMAND });
-      }
-    }
-  };
 
   // Scan for nearby Bluetooth devices
   const scanDevices = async (timeoutMs = 5000) => {
@@ -323,38 +337,37 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   // Enhanced connect function with better service discovery
-  const connectToDevice = async (deviceId: string) => {
+  const connectToDevice = useCallback(async (deviceId: string) => {
     if (isConnectingRef.current) {
-      console.log('Connection already in progress, aborting new connection request');
       return false;
     }
-
+  
     if (connectedDevice) {
       await disconnect(connectedDevice.id);
     }
-
+  
     isConnectingRef.current = true;
     dispatch({ type: BluetoothActionType.CONNECT_START });
-
+  
     let retryCount = CONNECTION_RETRY_ATTEMPTS;
-
+  
     while (retryCount > 0) {
       try {
         // Check if already connected
         const isConnected = await BleManager.isPeripheralConnected(deviceId, []);
-
+  
         if (!isConnected) {
           await BleManager.connect(deviceId);
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
-
+  
         // Get device services with retries
         const peripheralInfo = await BleManager.retrieveServices(deviceId);
-
+  
         if (!peripheralInfo.services || !peripheralInfo.characteristics) {
           throw new Error('Failed to retrieve services or characteristics');
         }
-
+  
         // Find OBD service
         const service = peripheralInfo.services.find(s => {
           const serviceUUID = Platform.OS === 'ios' ? s.uuid.toLowerCase() : s.uuid;
@@ -364,16 +377,16 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               serviceUUID === `0000${uuid.toLowerCase()}-0000-1000-8000-00805f9b34fb`,
           );
         });
-
+  
         if (!service) {
           throw new Error('OBD service not found');
         }
-
+  
         // Find characteristics
         const characteristics = peripheralInfo.characteristics.filter(
           c => c.service === service.uuid,
         );
-
+  
         // Find write characteristic
         const writeCharacteristic = characteristics.find(c => {
           const canWrite =
@@ -381,7 +394,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             c.properties?.WriteWithoutResponse === 'WriteWithoutResponse';
           return canWrite;
         });
-
+  
         // Find notify characteristic
         const notifyCharacteristic = characteristics.find(
           c =>
@@ -389,18 +402,18 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             c.characteristic === DEFAULT_CHARACTERISTIC_UUID_SHORT ||
             c.characteristic === DEFAULT_CHARACTERISTIC_UUID,
         );
-
+  
         if (!writeCharacteristic || !notifyCharacteristic) {
           throw new Error('Required characteristics not found');
         }
-
+  
         // Start notification
         await BleManager.startNotification(
           deviceId,
           service.uuid,
           notifyCharacteristic.characteristic,
         );
-
+  
         // Store connection details
         const connectionDetails = {
           serviceUUID: service.uuid,
@@ -408,7 +421,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           notifyCharacteristicUUID: notifyCharacteristic.characteristic,
           writeWithResponse: writeCharacteristic.properties?.Write === 'Write',
         };
-
+  
         dispatch({
           type: BluetoothActionType.CONNECT_SUCCESS,
           payload: {
@@ -416,16 +429,12 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             details: connectionDetails,
           },
         });
-
+  
         isConnectingRef.current = false;
         return true;
       } catch (error) {
-        console.warn(
-          `Connection attempt ${CONNECTION_RETRY_ATTEMPTS - retryCount + 1} failed:`,
-          error,
-        );
         retryCount--;
-
+  
         if (retryCount === 0) {
           dispatch({
             type: BluetoothActionType.CONNECT_FAILURE,
@@ -434,13 +443,13 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           isConnectingRef.current = false;
           return false;
         }
-
+  
         await new Promise(resolve => setTimeout(resolve, CONNECTION_RETRY_DELAY));
       }
     }
-
+  
     return false;
-  };
+  }, [connectedDevice, disconnect]);
 
   // Enhanced sendCommand with direct response waiting
   const sendCommand = async (
@@ -491,89 +500,45 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
-  // Enhanced disconnect with proper cleanup
-  const disconnect = async (deviceId: string) => {
-    if (!deviceId) return false;
-
-    try {
-      // Send reset command before disconnecting
-      try {
-        await sendCommand('ATZ');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      } catch (error) {
-        console.warn('Error sending reset command:', error);
-      }
-
-      // Stop scanning if active
-      await BleManager.stopScan();
-
-      // Stop notifications if active
-      if (connectedDevice && connectionDetails) {
-        try {
-          await BleManager.stopNotification(
-            deviceId,
-            connectionDetails.serviceUUID,
-            connectionDetails.notifyCharacteristicUUID,
-          );
-        } catch (error) {
-          console.warn('Error stopping notification:', error);
-        }
-      }
-
-      // Reset data receiver
-      dataReceiver.reset();
-
-      // Disconnect device
-      await BleManager.disconnect(deviceId);
-
-      // Small delay to ensure proper cleanup
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      dispatch({ type: BluetoothActionType.DISCONNECT_SUCCESS });
-      return true;
-    } catch (error) {
-      console.error('Disconnect failed:', error);
-      return false;
-    }
-  };
-
   // Set up notification handler
   useEffect(() => {
     if (connectedDevice && connectionDetails) {
       try {
-        // Subscribe to value changes
         const sub = bleEmitter.addListener(
           'BleManagerDidUpdateValueForCharacteristic',
           handleNotification,
         );
 
-        // Start notifications
         BleManager.startNotification(
           connectedDevice.id,
           connectionDetails.serviceUUID,
           connectionDetails.notifyCharacteristicUUID,
-        ).catch(error => {
-          console.warn('Failed to start notifications:', error);
+        ).catch(() => {
+          /* Errors are already logged by console.warn */
         });
 
-        // Clean up
         return () => {
           sub.remove();
           if (connectedDevice) {
-            disconnect(connectedDevice.id).catch(error => {
-              console.warn('Disconnect failed on cleanup:', error);
+            disconnect(connectedDevice.id).catch(() => {
+              /* Errors are already logged by console.warn */
             });
           }
         };
       } catch (error) {
-        console.warn('Notification setup error:', error);
+        /* Error is already logged by console.warn */
       }
     }
-    return () => {};
+
+    // This empty function is intentional as it's a cleanup function for an effect
+    // that might not need cleanup in some cases
+    return () => {
+      /* No cleanup needed when device not connected */
+    };
   }, [connectedDevice, connectionDetails, disconnect, handleNotification]);
 
   // Context value
-  const contextValue = {
+  const contextValue: BluetoothContextType = {
     ...state,
     scanDevices,
     connectToDevice,
@@ -590,7 +555,6 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     isConnected: !!connectedDevice,
   };
 
-  // Render children only if Bluetooth is initialized
   return (
     <BluetoothContext.Provider value={contextValue}>
       {isInitialized ? children : null}

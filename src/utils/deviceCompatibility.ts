@@ -21,7 +21,13 @@ class DeviceCompatibilityManager {
   private deviceHistory: Map<string, DeviceProfile> = new Map();
   private isLoaded = false;
 
-  private constructor() {}
+  /** 
+   * Private constructor for singleton pattern.
+   * Data loading is deferred until loadDeviceHistory is called.
+   */
+  private constructor() {
+    // Intentionally empty - initialization happens through loadDeviceHistory
+  }
 
   static getInstance(): DeviceCompatibilityManager {
     if (!DeviceCompatibilityManager.instance) {

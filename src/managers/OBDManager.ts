@@ -1,10 +1,9 @@
 import { logBluetoothError } from '../utils/errorUtils';
-import { ECUConnector, ELM_COMMANDS, RSP_ID } from '../utils/obdUtils';
+import { ECUConnector, ELM_COMMANDS } from '../utils/obdUtils';
 import { formatPidCommand, convertPidValue } from '../utils/pidUtils';
 
 // Default timeouts 
 const DEFAULT_TIMEOUT = 5000;
-const INITIALIZATION_TIMEOUT = 10000;
 
 // OBD Protocol IDs
 export enum OBDProtocol {
@@ -39,8 +38,15 @@ export enum OBDEventType {
   ERROR = 'error'
 }
 
+interface OBDEventData {
+  message?: string;
+  command?: string;
+  response?: string;
+  error?: Error;
+}
+
 // Event listener type
-type OBDEventListener = (event: OBDEventType, data?: any) => void;
+type OBDEventListener = (event: OBDEventType, data?: OBDEventData) => void;
 
 /**
  * OBD Manager Class
@@ -55,7 +61,13 @@ export class OBDManager {
   private autoReconnect = false;
   private streamingManager = StreamingStateManager.getInstance();
   
-  private constructor() {}
+  /** 
+   * Private constructor for singleton pattern.
+   * Instance should be obtained through getInstance() method.
+   */
+  private constructor() {
+    // Intentionally empty - initialization happens through setECUConnector
+  }
   
   /**
    * Get the singleton instance
@@ -134,7 +146,7 @@ export class OBDManager {
     } catch (error) {
       logBluetoothError(error, 'OBDManager.initialize');
       this.setConnectionState(ConnectionState.ERROR);
-      this.notifyListeners(OBDEventType.ERROR, error);
+      this.notifyListeners(OBDEventType.ERROR, { error });
       return false;
     }
   }
@@ -227,14 +239,14 @@ export class OBDManager {
     
     try {
       this.streamingManager.startStreaming();
-      const response = await this.ecuConnector.sendCommand(command);
+      const response = await this.ecuConnector.sendCommand(command, timeout);
       this.streamingManager.stopStreaming();
       this.notifyListeners(OBDEventType.DATA_RECEIVED, { command, response });
       return response;
     } catch (error) {
       this.streamingManager.stopStreaming();
       logBluetoothError(error, `OBDManager.sendCommand(${command})`);
-      this.notifyListeners(OBDEventType.ERROR, error);
+      this.notifyListeners(OBDEventType.ERROR, { error });
       throw error;
     }
   }
@@ -244,7 +256,7 @@ export class OBDManager {
    * @param mode OBD mode (e.g., 1 for current data)
    * @param pid PID number (e.g., 12 for RPM)
    */
-  public async requestPid(mode: number, pid: number): Promise<any> {
+  public async requestPid(mode: number, pid: number): Promise<string | number | null> {
     const command = formatPidCommand(mode, pid);
     const response = await this.sendCommand(command);
     
@@ -276,7 +288,7 @@ export class OBDManager {
    * @param event Event type
    * @param data Optional event data
    */
-  private notifyListeners(event: OBDEventType, data?: any): void {
+  private notifyListeners(event: OBDEventType, data?: OBDEventData): void {
     this.eventListeners.forEach(listener => {
       try {
         listener(event, data);

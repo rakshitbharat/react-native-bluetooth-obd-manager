@@ -1,52 +1,32 @@
-import convertString from 'convert-string';
-import { TextDecoder } from 'text-decoding';
-
-// Common response terminators for OBD devices
-const TERMINATORS = ['>', '\r\r>', '\r\n>', '\n>'];
-const SUCCESS_RESPONSES = ['OK', 'ELM327'];
-const ERROR_RESPONSES = ['?', 'ERROR', 'UNABLE TO CONNECT', 'NO DATA'];
+import { stringToBytes } from 'convert-string';
 
 /**
- * Decode raw byte data from BLE device
+ * Convert byte array to string
  */
-export const decodeData = (data: number[]): string => {
-  return String.fromCharCode(...data);
-};
+export function decodeData(bytes: Uint8Array | number[]): string {
+  return String.fromCharCode(...bytes);
+}
 
 /**
- * Encode string command to bytes for sending to device
+ * Convert command to bytes
  */
-export const encodeCommand = (command: string): number[] => {
-  return Array.from(command).map(char => char.charCodeAt(0));
-};
+export function encodeCommand(command: string): number[] {
+  return stringToBytes(command);
+}
 
 /**
- * Check if a response indicates command completion
+ * Check if OBD response is complete (ends with '>')
  */
-export const isResponseComplete = (response: string): boolean => {
-  return response.includes('>') || 
-         response.includes('OK') || 
-         response.includes('NO DATA') || 
-         response.includes('ERROR');
-};
+export function isResponseComplete(response: string): boolean {
+  return response.includes('>');
+}
 
 /**
- * Format the raw response for consumption
+ * Format OBD response 
  */
-export const formatResponse = (response: string, command?: string): string => {
-  let result = response;
-  
-  // Remove command echo if present
-  if (command && result.startsWith(command)) {
-    result = result.substring(command.length);
-  }
-  
-  // Remove prompt character
-  result = result.replace('>', '');
-  
-  // Trim whitespace but preserve line breaks
-  return result.trim();
-};
+export function formatResponse(response: string): string {
+  return response.trim();
+}
 
 /**
  * Check if response indicates an error

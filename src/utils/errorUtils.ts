@@ -22,9 +22,9 @@ export enum BluetoothErrorType {
  */
 export class BluetoothOBDError extends Error {
   type: BluetoothErrorType;
-  details?: any;
+  details?: unknown;
 
-  constructor(type: BluetoothErrorType, message: string, details?: any) {
+  constructor(type: BluetoothErrorType, message: string, details?: unknown) {
     super(message);
     this.type = type;
     this.details = details;
@@ -35,17 +35,17 @@ export class BluetoothOBDError extends Error {
 export const createBluetoothError = (
   type: BluetoothErrorType,
   message: string,
-  details?: any,
+  details?: unknown,
 ): BluetoothOBDError => {
   return new BluetoothOBDError(type, message, details);
 };
 
 // Retry utility for notification operations
-export const retryNotification = async (
-  operation: () => Promise<any>,
+export const retryNotification = async <T>(
+  operation: () => Promise<T>,
   maxRetries = 3,
   delayMs = 1000,
-): Promise<any> => {
+): Promise<T> => {
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -69,12 +69,12 @@ export const retryNotification = async (
 };
 
 // Handle common Bluetooth errors
-export const handleBluetoothError = (error: any): BluetoothOBDError => {
+export const handleBluetoothError = (error: unknown): BluetoothOBDError => {
   if (error instanceof BluetoothOBDError) {
     return error;
   }
 
-  const message = error.message || String(error);
+  const message = error instanceof Error ? error.message : String(error);
 
   if (message.includes('permission')) {
     return new BluetoothOBDError(
@@ -124,8 +124,8 @@ export const handleBluetoothError = (error: any): BluetoothOBDError => {
  * @param error Original error from BLE Manager or other source
  * @returns Standardized BluetoothOBDError
  */
-export const parseBluetoothError = (error: any): BluetoothOBDError => {
-  const errorMessage = error?.message || String(error);
+export const parseBluetoothError = (error: unknown): BluetoothOBDError => {
+  const errorMessage = error instanceof Error ? error.message : String(error);
 
   // Detect different types of errors based on the message content
   if (errorMessage.includes('permission') || errorMessage.includes('Permission')) {
@@ -179,7 +179,7 @@ export const parseBluetoothError = (error: any): BluetoothOBDError => {
  * @param error Error to log
  * @param context Optional context information
  */
-export const logBluetoothError = (error: any, context?: string): void => {
+export const logBluetoothError = (error: unknown, context?: string): void => {
   let type = "UNKNOWN";
   let message = '';
   let details = undefined;
@@ -202,11 +202,11 @@ export const logBluetoothError = (error: any, context?: string): void => {
   );
 };
 
-export const attemptRecovery = async (
-  error: any,
-  retryFn: () => Promise<any>,
+export const attemptRecovery = async <T>(
+  error: unknown,
+  retryFn: () => Promise<T>,
   maxAttempts = 3,
-): Promise<any> => {
+): Promise<T> => {
   let attempts = 0;
   let lastError = error;
 
@@ -225,7 +225,7 @@ export const attemptRecovery = async (
   throw lastError;
 };
 
-export const isRecoverableError = (error: any): boolean => {
+export const isRecoverableError = (error: unknown): boolean => {
   if (error instanceof BluetoothOBDError) {
     switch (error.type) {
       case BluetoothErrorType.CONNECTION_ERROR:

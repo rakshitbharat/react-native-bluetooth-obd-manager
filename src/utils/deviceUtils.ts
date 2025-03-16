@@ -1,104 +1,79 @@
-import { Platform } from 'react-native';
-import BleManager from 'react-native-ble-manager';
+import BleManager, { Peripheral } from 'react-native-ble-manager';
 
 import { ConnectionDetails } from '../types/bluetoothTypes';
 
-// Common ELM327 service UUIDs
-const COMMON_OBD_SERVICES = [
-  'FFE0', // Most common ELM327 service
-  'FFF0', // Alternative service
-  '18F0', // Used by some older adapters
-  'BEEF', // Used by some Chinese adapters
-  'E7A1', // Another variant
-  'FFE1', // Some Chinese clones
-  'FFF1', // Another clone variant
-  'FF00', // Generic OBD service
+// Common service UUIDs for OBD adapters
+const SERVICE_UUIDS = [
+  'fff0', // Common ELM327 service
+  'ffe0', // Alternative service
+  '18f0', // Used by some clone adapters
+  'beef', // Used by some Chinese adapters
 ];
-
-// Common characteristic UUIDs for old adapters
-const COMMON_CHARACTERISTICS = [
-  'FFE1', // Most common
-  'FFF1', // Alternative
-  'FF01', // Generic
-  'E7A1', // Some older adapters
-];
-
-// Convert short UUID to full format for iOS
-const getFullUUID = (shortUUID: string): string => {
-  return `0000${shortUUID}-0000-1000-8000-00805F9B34FB`.toUpperCase();
-};
 
 /**
- * Find compatible service and characteristic for an OBD device
- * @param device Device information from BleManager
- * @returns Connection details or null if not found
+ * Find compatible service and characteristics for OBD device
  */
-export const findServiceAndCharacteristic = async (device: any): Promise<ConnectionDetails | null> => {
+export async function findServiceAndCharacteristic(
+  deviceId: string
+): Promise<ConnectionDetails | null> {
   try {
-    if (!device || !device.services || !device.characteristics) {
+    // Get device services
+    const info = await BleManager.retrieveServices(deviceId);
+
+    if (!info.services || !info.characteristics) {
+      console.error('No services or characteristics found');
       return null;
     }
 
-    // Find a compatible service
-    const service = device.services.find((s: any) => {
-      const serviceUUID = s.uuid.toUpperCase();
-      return COMMON_OBD_SERVICES.some(id => serviceUUID.includes(id));
+    // Find OBD service
+    const service = info.services.find(s => {
+      const uuid = s.uuid.toLowerCase();
+      return SERVICE_UUIDS.some(id => 
+        uuid === id || uuid === `0000${id}-0000-1000-8000-00805f9b34fb`
+      );
     });
 
     if (!service) {
+      console.error('No compatible OBD service found');
       return null;
     }
 
-    // Get all characteristics for this service
-    const serviceChars = device.characteristics.filter(
-      (c: any) => c.service.toUpperCase() === service.uuid.toUpperCase(),
+    // Find characteristics for this service
+    const characteristics = info.characteristics.filter(
+      c => c.service === service.uuid
     );
 
-    // Find notify characteristic
-    const notifyChar = serviceChars.find((c: any) => {
-      return c.properties?.Notify === 'Notify';
-    });
+    // Find write characteristic (needs Write property)
+    const writeCharacteristic = characteristics.find(c => 
+      c.properties.Write || c.properties.WriteWithoutResponse
+    );
 
-    if (!notifyChar) {
+    // Find notify characteristic (needs Notify property)
+    const notifyCharacteristic = characteristics.find(c => 
+      c.properties.Notify || c.properties.Indicate
+    );
+
+    if (!writeCharacteristic || !notifyCharacteristic) {
+      console.error('Required characteristics not found');
       return null;
-    }
-
-    // Find write characteristic (may be the same as notify)
-    let writeChar = serviceChars.find((c: any) => {
-      return c.properties?.WriteWithoutResponse === 'WriteWithoutResponse';
-    });
-
-    // If no write without response, try regular write
-    let writeWithResponse = false;
-    if (!writeChar) {
-      writeChar = serviceChars.find((c: any) => {
-        return c.properties?.Write === 'Write';
-      });
-      writeWithResponse = true;
-    }
-
-    // If still no write characteristic, try using the notify characteristic
-    if (!writeChar) {
-      writeChar = notifyChar;
-      writeWithResponse = true;
     }
 
     return {
       serviceUUID: service.uuid,
-      writeCharacteristicUUID: writeChar.characteristic,
-      notifyCharacteristicUUID: notifyChar.characteristic,
-      writeWithResponse,
+      writeCharacteristicUUID: writeCharacteristic.characteristic,
+      notifyCharacteristicUUID: notifyCharacteristic.characteristic,
+      writeWithResponse: !!writeCharacteristic.properties.Write
     };
   } catch (error) {
-    console.error('Error finding service/characteristic:', error);
+    console.error('Error finding service/characteristics:', error);
     return null;
   }
-};
+}
 
 /**
  * Check if a device is likely an OBD device based on name
  */
-export const isOBDDevice = (device: any): boolean => {
+export const isOBDDevice = (device: Peripheral): boolean => {
   if (!device || !device.name) return false;
 
   const keywords = ['obd', 'elm', 'elm327', 'obdii', 'eobd', 'car', 'scanner', 'vgate'];
@@ -110,7 +85,7 @@ export const isOBDDevice = (device: any): boolean => {
 /**
  * Get a friendly name for the device
  */
-export const getDeviceName = (device: any): string => {
+export const getDeviceName = (device: Peripheral): string => {
   if (!device) return 'Unknown Device';
   
   if (device.name) {
@@ -122,4 +97,15 @@ export const getDeviceName = (device: any): string => {
   return 'Unknown Device';
 };
 
-// Other utility functions...
+// Export necessary interfaces and types
+export interface DeviceInfo {
+  id: string;
+  name: string;
+  rssi: number;
+  isOBDDevice: boolean;
+}
+
+export interface ServiceInfo {
+  uuid: string;
+  isPrimary: boolean;
+}
