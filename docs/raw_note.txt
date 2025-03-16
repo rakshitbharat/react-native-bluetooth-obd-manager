@@ -44,3 +44,4 @@ here we also have to take care of asking bleutooth permission from user and also
 
 all this opeations are part of BluetoothContext and its out of box hook in which we will have all the functions to make this dream possible
 
+continue we dont have anything outside of our project we already have all ref code in ref folder
