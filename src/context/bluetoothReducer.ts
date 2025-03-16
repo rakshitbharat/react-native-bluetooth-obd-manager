@@ -1,5 +1,4 @@
-import { BluetoothState, BluetoothAction, BluetoothActionType } from '../types/bluetoothTypes';
-import { Peripheral } from 'react-native-ble-manager';
+import { BluetoothState, BluetoothActionType } from '../types/bluetoothTypes';
 
 export const initialState: BluetoothState = {
   isInitialized: false,
@@ -9,146 +8,122 @@ export const initialState: BluetoothState = {
   discoveredDevices: [],
   connectedDevice: null,
   connectionDetails: null,
-  isConnecting: false,
   isStreaming: false,
-  pendingCommand: null,
-  responseData: '',
-  error: null,
+  error: null
 };
 
 export const bluetoothReducer = (
   state: BluetoothState,
-  action: BluetoothAction
+  action: { type: BluetoothActionType; payload?: any }
 ): BluetoothState => {
   switch (action.type) {
     case BluetoothActionType.INITIALIZE_SUCCESS:
       return {
         ...state,
-        isInitialized: true,
-        error: null,
+        isInitialized: true
       };
-      
+
     case BluetoothActionType.INITIALIZE_FAILURE:
       return {
         ...state,
         isInitialized: false,
-        error: 'Failed to initialize Bluetooth',
+        error: 'Failed to initialize Bluetooth'
       };
-      
+
     case BluetoothActionType.UPDATE_BLUETOOTH_STATE:
       return {
         ...state,
-        isBluetoothOn: action.payload,
+        isBluetoothOn: action.payload
       };
-      
+
     case BluetoothActionType.UPDATE_PERMISSIONS:
       return {
         ...state,
-        hasPermissions: action.payload,
+        hasPermissions: action.payload
       };
-      
+
     case BluetoothActionType.SCAN_START:
       return {
         ...state,
         isScanning: true,
         discoveredDevices: [],
-        error: null,
+        error: null
       };
-      
+
     case BluetoothActionType.SCAN_STOP:
       return {
         ...state,
-        isScanning: false,
+        isScanning: false
       };
-      
+
     case BluetoothActionType.DEVICE_DISCOVERED:
-      // Avoid duplicates
-      const existingDeviceIndex = state.discoveredDevices.findIndex(
+      // Prevent duplicate devices
+      const exists = state.discoveredDevices.some(
         device => device.id === action.payload.id
       );
       
-      if (existingDeviceIndex >= 0) {
-        const updatedDevices = [...state.discoveredDevices];
-        updatedDevices[existingDeviceIndex] = action.payload;
-        return {
-          ...state,
-          discoveredDevices: updatedDevices,
-        };
-      } else {
-        return {
-          ...state,
-          discoveredDevices: [...state.discoveredDevices, action.payload],
-        };
-      }
-      
+      return {
+        ...state,
+        discoveredDevices: exists
+          ? state.discoveredDevices
+          : [...state.discoveredDevices, action.payload]
+      };
+
     case BluetoothActionType.CONNECT_START:
       return {
         ...state,
-        isConnecting: true,
-        error: null,
+        error: null
       };
-      
+
     case BluetoothActionType.CONNECT_SUCCESS:
       return {
         ...state,
-        isConnecting: false,
         connectedDevice: action.payload.device,
         connectionDetails: action.payload.details,
-        error: null,
+        error: null
       };
-      
+
     case BluetoothActionType.CONNECT_FAILURE:
       return {
         ...state,
-        isConnecting: false,
-        error: action.payload || 'Connection failed',
+        error: action.payload,
+        connectedDevice: null,
+        connectionDetails: null
       };
-      
+
     case BluetoothActionType.DISCONNECT_SUCCESS:
       return {
         ...state,
         connectedDevice: null,
         connectionDetails: null,
         isStreaming: false,
-        pendingCommand: null,
-        responseData: '',
+        error: null
       };
-      
+
     case BluetoothActionType.SEND_COMMAND:
       return {
         ...state,
-        isStreaming: true,
-        pendingCommand: action.payload,
-        responseData: '',
-        error: null,
+        isStreaming: true
       };
-      
-    case BluetoothActionType.RECEIVE_DATA:
-      return {
-        ...state,
-        responseData: state.responseData + action.payload,
-      };
-      
+
     case BluetoothActionType.COMPLETE_COMMAND:
       return {
         ...state,
-        isStreaming: false,
-        pendingCommand: null,
+        isStreaming: false
       };
-      
+
     case BluetoothActionType.RESET_STREAM:
       return {
         ...state,
-        isStreaming: false,
-        pendingCommand: null,
+        isStreaming: false
       };
-      
+
     case BluetoothActionType.SET_ERROR:
       return {
         ...state,
-        error: action.payload,
+        error: action.payload
       };
-      
+
     default:
       return state;
   }

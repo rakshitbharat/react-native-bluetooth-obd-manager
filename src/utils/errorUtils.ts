@@ -5,12 +5,15 @@
 // Error types
 export enum BluetoothErrorType {
   INITIALIZATION_ERROR = 'INITIALIZATION_ERROR',
-  CONNECTION_ERROR = 'CONNECTION_ERROR',
-  COMMUNICATION_ERROR = 'COMMUNICATION_ERROR',
   PERMISSION_ERROR = 'PERMISSION_ERROR',
+  CONNECTION_ERROR = 'CONNECTION_ERROR',
+  SERVICE_ERROR = 'SERVICE_ERROR',
+  CHARACTERISTIC_ERROR = 'CHARACTERISTIC_ERROR',
+  NOTIFICATION_ERROR = 'NOTIFICATION_ERROR',
+  WRITE_ERROR = 'WRITE_ERROR',
   TIMEOUT_ERROR = 'TIMEOUT_ERROR',
-  COMPATIBILITY_ERROR = 'COMPATIBILITY_ERROR',
-  UNKNOWN_ERROR = 'UNKNOWN_ERROR',
+  DISCONNECTION_ERROR = 'DISCONNECTION_ERROR',
+  UNKNOWN_ERROR = 'UNKNOWN_ERROR'
 }
 
 /**
@@ -18,16 +21,102 @@ export enum BluetoothErrorType {
  */
 export class BluetoothOBDError extends Error {
   type: BluetoothErrorType;
-  
-  constructor(message: string, type: BluetoothErrorType = BluetoothErrorType.UNKNOWN_ERROR) {
+  details?: any;
+
+  constructor(type: BluetoothErrorType, message: string, details?: any) {
     super(message);
-    this.name = 'BluetoothOBDError';
     this.type = type;
-    
-    // This is needed for proper instanceof checks in TypeScript with custom errors
-    Object.setPrototypeOf(this, BluetoothOBDError.prototype);
+    this.details = details;
+    this.name = 'BluetoothOBDError';
   }
 }
+
+export const createBluetoothError = (type: BluetoothErrorType, message: string, details?: any): BluetoothOBDError => {
+  return new BluetoothOBDError(type, message, details);
+};
+
+// Retry utility for notification operations
+export const retryNotification = async (
+  operation: () => Promise<any>,
+  maxRetries: number = 3,
+  delayMs: number = 1000
+): Promise<any> => {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error as Error;
+      console.warn(`Notification attempt ${attempt} failed:`, error);
+      
+      if (attempt === maxRetries) break;
+      
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  
+  throw new BluetoothOBDError(
+    BluetoothErrorType.NOTIFICATION_ERROR,
+    `Operation failed after ${maxRetries} attempts`,
+    lastError
+  );
+};
+
+// Handle common Bluetooth errors
+export const handleBluetoothError = (error: any): BluetoothOBDError => {
+  if (error instanceof BluetoothOBDError) {
+    return error;
+  }
+
+  const message = error.message || String(error);
+  
+  if (message.includes('permission')) {
+    return new BluetoothOBDError(
+      BluetoothErrorType.PERMISSION_ERROR,
+      'Bluetooth permission denied',
+      error
+    );
+  }
+  
+  if (message.includes('connect')) {
+    return new BluetoothOBDError(
+      BluetoothErrorType.CONNECTION_ERROR,
+      'Failed to connect to device',
+      error
+    );
+  }
+  
+  if (message.includes('service')) {
+    return new BluetoothOBDError(
+      BluetoothErrorType.SERVICE_ERROR,
+      'Failed to find required service',
+      error
+    );
+  }
+  
+  if (message.includes('characteristic')) {
+    return new BluetoothOBDError(
+      BluetoothErrorType.CHARACTERISTIC_ERROR,
+      'Failed to find required characteristic',
+      error
+    );
+  }
+  
+  if (message.includes('timeout')) {
+    return new BluetoothOBDError(
+      BluetoothErrorType.TIMEOUT_ERROR,
+      'Operation timed out',
+      error
+    );
+  }
+
+  return new BluetoothOBDError(
+    BluetoothErrorType.UNKNOWN_ERROR,
+    'Unknown Bluetooth error occurred',
+    error
+  );
+};
 
 /**
  * Parse BLE Manager error and return a standardized error object
@@ -40,36 +129,41 @@ export const parseBluetoothError = (error: any): BluetoothOBDError => {
   // Detect different types of errors based on the message content
   if (errorMessage.includes('permission') || errorMessage.includes('Permission')) {
     return new BluetoothOBDError(
-      `Bluetooth permission denied: ${errorMessage}`, 
-      BluetoothErrorType.PERMISSION_ERROR
+      BluetoothErrorType.PERMISSION_ERROR,
+      `Bluetooth permission denied: ${errorMessage}`,
+      error
     );
   }
   
   if (errorMessage.includes('disconnect') || errorMessage.includes('Disconnect')) {
     return new BluetoothOBDError(
-      `Device disconnected: ${errorMessage}`, 
-      BluetoothErrorType.CONNECTION_ERROR
+      BluetoothErrorType.CONNECTION_ERROR,
+      `Device disconnected: ${errorMessage}`,
+      error
     );
   }
   
   if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
     return new BluetoothOBDError(
-      `Operation timed out: ${errorMessage}`, 
-      BluetoothErrorType.TIMEOUT_ERROR
+      BluetoothErrorType.TIMEOUT_ERROR,
+      `Operation timed out: ${errorMessage}`,
+      error
     );
   }
   
   if (errorMessage.includes('compatible') || errorMessage.includes('Compatible')) {
     return new BluetoothOBDError(
-      `Device compatibility issue: ${errorMessage}`, 
-      BluetoothErrorType.COMPATIBILITY_ERROR
+      BluetoothErrorType.COMPATIBILITY_ERROR,
+      `Device compatibility issue: ${errorMessage}`,
+      error
     );
   }
   
   if (errorMessage.includes('initialize') || errorMessage.includes('Initialize')) {
     return new BluetoothOBDError(
-      `Initialization error: ${errorMessage}`, 
-      BluetoothErrorType.INITIALIZATION_ERROR
+      BluetoothErrorType.INITIALIZATION_ERROR,
+      `Initialization error: ${errorMessage}`,
+      error
     );
   }
   

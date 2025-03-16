@@ -1,185 +1,186 @@
+import { Platform } from 'react-native';
 import BleManager from 'react-native-ble-manager';
 import { ConnectionDetails } from '../types/bluetoothTypes';
-import { Platform } from 'react-native';
 
-// Common ELM327 service UUIDs (these are generic - actual devices might have specific ones)
+// Common ELM327 service UUIDs
 const COMMON_OBD_SERVICES = [
-  'FFE0', // Common for many ELM327 adapters
-  'FFF0', 
-  '18F0', // Some adapters use this
-  'BEEF', // Other adapters
-  'FFE1', // Some Chinese adapters
-  'FFF1',
-  'AB90', // Additional OBD adapter
-  '0000FFE0-0000-1000-8000-00805F9B34FB', // Full UUID format
-  '0000FFF0-0000-1000-8000-00805F9B34FB',
-  '00001801-0000-1000-8000-00805F9B34FB', // Generic Attribute Profile
+  'FFE0',  // Most common ELM327 service
+  'FFF0',  // Alternative service
+  '18F0',  // Used by some older adapters
+  'BEEF',  // Used by some Chinese adapters
+  'E7A1',  // Another variant
+  'FFE1',  // Some Chinese clones
+  'FFF1',  // Another clone variant
+  'FF00',  // Generic OBD service
 ];
 
-// Common characteristic UUIDs
+// Common characteristic UUIDs for old adapters
 const COMMON_CHARACTERISTICS = [
-  'FFE1',
-  'FFF1',
-  '2A00', // Device name
-  '2A01', // Appearance
-  '2A05', // Service Changed
+  'FFE1', // Most common
+  'FFF1', // Alternative
+  'FF01', // Generic
+  'E7A1', // Some older adapters
 ];
 
-// Normalize UUID format for comparison
+// Convert short UUID to full format for iOS
+const getFullUUID = (shortUUID: string): string => {
+  return `0000${shortUUID}-0000-1000-8000-00805F9B34FB`.toUpperCase();
+};
+
+// Normalize UUID format based on platform
 const normalizeUUID = (uuid: string): string => {
   uuid = uuid.toUpperCase();
-  
-  // Convert short UUID to full format if on iOS and it's a short UUID
-  if (Platform.OS === 'ios' && uuid.length <= 8) {
-    return `0000${uuid.padStart(4, '0')}-0000-1000-8000-00805F9B34FB`;
+  if (Platform.OS === 'ios' && uuid.length === 4) {
+    return getFullUUID(uuid);
   }
-  
   return uuid;
 };
 
-// Check if a UUID matches any common OBD service UUID
-const matchesCommonOBDService = (uuid: string): boolean => {
-  const normalizedUuid = normalizeUUID(uuid);
-  return COMMON_OBD_SERVICES.some(obdService => {
-    const normalizedOBDService = normalizeUUID(obdService);
-    return normalizedUuid === normalizedOBDService || normalizedUuid.includes(normalizedOBDService.replace(/-/g, ''));
+// Check if a UUID matches any common OBD service
+const isOBDService = (uuid: string): boolean => {
+  const normalized = normalizeUUID(uuid);
+  return COMMON_OBD_SERVICES.some(service => {
+    const normalizedService = normalizeUUID(service);
+    return normalized === normalizedService;
   });
 };
 
-// Try to find appropriate service and characteristics for an OBD device
+// Check if a characteristic UUID matches common OBD characteristics
+const isOBDCharacteristic = (uuid: string): boolean => {
+  const normalized = normalizeUUID(uuid);
+  return COMMON_CHARACTERISTICS.some(char => {
+    const normalizedChar = normalizeUUID(char);
+    return normalized === normalizedChar;
+  });
+};
+
+// Find best matching write characteristic
+const findWriteCharacteristic = (characteristics: any[]): any => {
+  // First try to find a characteristic with write property
+  let writeChar = characteristics.find(c => {
+    const props = c.properties || {};
+    return props.Write === 'Write' || props.write === true;
+  });
+
+  // If not found, look for writeWithoutResponse
+  if (!writeChar) {
+    writeChar = characteristics.find(c => {
+      const props = c.properties || {};
+      return props.WriteWithoutResponse === 'WriteWithoutResponse' || 
+             props.writeWithoutResponse === true;
+    });
+  }
+
+  // If still not found, try matching by UUID
+  if (!writeChar) {
+    writeChar = characteristics.find(c => 
+      isOBDCharacteristic(c.characteristic)
+    );
+  }
+
+  return writeChar;
+};
+
+// Find best matching notify characteristic
+const findNotifyCharacteristic = (characteristics: any[]): any => {
+  // First try to find a characteristic with notify property
+  let notifyChar = characteristics.find(c => {
+    const props = c.properties || {};
+    return props.Notify === 'Notify' || props.notify === true;
+  });
+
+  // If not found, try matching by UUID
+  if (!notifyChar) {
+    notifyChar = characteristics.find(c => 
+      isOBDCharacteristic(c.characteristic)
+    );
+  }
+
+  return notifyChar;
+};
+
 export const findServiceAndCharacteristic = async (
   deviceId: string,
-  retryAttempts = 3
+  retryCount = 3
 ): Promise<ConnectionDetails | null> => {
-  let lastError: Error | null = null;
-  
-  for (let attempt = 1; attempt <= retryAttempts; attempt++) {
+  while (retryCount > 0) {
     try {
-      // If this isn't the first attempt, wait before retrying
-      if (attempt > 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-
-      // Retrieve services and characteristics
       const deviceInfo = await BleManager.retrieveServices(deviceId);
       
-      if (!deviceInfo.services || deviceInfo.services.length === 0) {
-        throw new Error('No services found for this device');
-      }
+      // Find OBD service
+      let service = deviceInfo.services.find(s => isOBDService(s.uuid));
       
-      console.log(`Attempt ${attempt}: Found ${deviceInfo.services.length} services for device ${deviceId}`);
-      
-      // Look for known OBD services first
-      let targetService = deviceInfo.services.find(service => matchesCommonOBDService(service.uuid));
-      
-      // If no known OBD service found, try to use the first service that has characteristics
-      if (!targetService) {
-        console.log('No known OBD service found, searching for service with characteristics');
-        for (const service of deviceInfo.services) {
-          const characteristics = await BleManager.retrieveServices(deviceId);
-          const serviceData = characteristics.services.find(s => s.uuid === service.uuid);
-          if (serviceData?.characteristics?.length > 0) {
-            targetService = service;
+      // If no standard service found, try alternative approach
+      if (!service) {
+        // Look for any service that has characteristics
+        for (const s of deviceInfo.services) {
+          const chars = deviceInfo.characteristics.filter(c => c.service === s.uuid);
+          if (chars.length > 0) {
+            service = s;
             break;
           }
         }
       }
       
-      if (!targetService) {
-        throw new Error('Could not find suitable service for OBD communication');
+      if (!service) {
+        throw new Error('No suitable service found');
       }
-      
-      console.log(`Selected service: ${targetService.uuid}`);
-      
-      // Get characteristics for the found service
-      const characteristics = deviceInfo.characteristics.filter(c => c.service === targetService!.uuid);
-      
-      if (!characteristics || characteristics.length === 0) {
-        throw new Error('No characteristics found for this service');
+
+      // Get characteristics for this service
+      const characteristics = deviceInfo.characteristics.filter(
+        c => c.service === service!.uuid
+      );
+
+      // Find write and notify characteristics
+      const writeCharacteristic = findWriteCharacteristic(characteristics);
+      const notifyCharacteristic = findNotifyCharacteristic(characteristics);
+
+      if (!writeCharacteristic || !notifyCharacteristic) {
+        throw new Error('Required characteristics not found');
       }
-      
-      // Enhanced characteristic selection logic
-      const result = findBestCharacteristicSet(characteristics);
-      
-      if (!result.writeCharacteristic || !result.notifyCharacteristic) {
-        throw new Error('Could not find required characteristics for OBD communication');
-      }
-      
-      // Return the connection details
+
+      const writeWithResponse = 
+        writeCharacteristic.properties?.Write === 'Write' ||
+        writeCharacteristic.properties?.write === true;
+
       return {
-        serviceUUID: targetService.uuid,
-        writeCharacteristicUUID: result.writeCharacteristic.characteristic,
-        readCharacteristicUUID: (result.readCharacteristic || result.writeCharacteristic).characteristic,
-        notifyCharacteristicUUID: result.notifyCharacteristic.characteristic,
-        writeWithResponse: result.writeWithResponse
+        serviceUUID: service.uuid,
+        writeCharacteristicUUID: writeCharacteristic.characteristic,
+        notifyCharacteristicUUID: notifyCharacteristic.characteristic,
+        writeWithResponse
       };
+
     } catch (error) {
-      lastError = error as Error;
-      console.warn(`Attempt ${attempt} failed:`, error);
+      console.warn('Service discovery attempt failed:', error);
+      retryCount--;
       
-      // If this was our last attempt, throw the error
-      if (attempt === retryAttempts) {
-        throw lastError;
+      if (retryCount === 0) {
+        console.error('Service discovery failed after all retries');
+        return null;
       }
+      
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
-  
-  // This should never be reached due to throw in the loop, but TypeScript needs it
-  throw lastError || new Error('Failed to find service and characteristics');
+
+  return null;
 };
 
-// Helper function to find the best set of characteristics
-function findBestCharacteristicSet(characteristics: any[]) {
-  let writeCharacteristic = null;
-  let readCharacteristic = null;
-  let notifyCharacteristic = null;
-  let writeWithResponse = false;
-
-  // First pass: Look for characteristics with multiple capabilities
-  for (const char of characteristics) {
-    const props = char.properties || {};
-    
-    const canWrite = props.Write === 'Write' || 
-                    props.WriteWithoutResponse === 'WriteWithoutResponse' ||
-                    props.write === true || 
-                    props.writeWithoutResponse === true;
-    
-    const canRead = props.Read === 'Read' || props.read === true;
-    const canNotify = props.Notify === 'Notify' || props.notify === true;
-    
-    // Prefer characteristics that can both write and notify
-    if (canWrite && canNotify) {
-      writeCharacteristic = char;
-      notifyCharacteristic = char;
-      writeWithResponse = props.Write === 'Write' || props.write === true;
-    }
-    
-    // Store individual capabilities if we don't find a multi-capable one
-    if (canWrite && !writeCharacteristic) {
-      writeCharacteristic = char;
-      writeWithResponse = props.Write === 'Write' || props.write === true;
-    }
-    
-    if (canRead && !readCharacteristic) {
-      readCharacteristic = char;
-    }
-    
-    if (canNotify && !notifyCharacteristic) {
-      notifyCharacteristic = char;
-    }
-  }
+// Utility to check if a device is likely an OBD adapter
+export const isLikelyOBDDevice = (device: any): boolean => {
+  const name = (device.name || device.localName || '').toLowerCase();
   
-  // Fallback: If we don't have all required characteristics, use the first one
-  // This works with many generic ELM327 adapters
-  if (characteristics.length > 0) {
-    if (!writeCharacteristic) writeCharacteristic = characteristics[0];
-    if (!notifyCharacteristic) notifyCharacteristic = characteristics[0];
-  }
+  // Common OBD device name patterns
+  const obdPatterns = [
+    'obd',
+    'elm',
+    'car',
+    'vgate',
+    'obdii',
+    'eobd',
+    'scanner',
+    'diagnostic'
+  ];
   
-  return {
-    writeCharacteristic,
-    readCharacteristic,
-    notifyCharacteristic,
-    writeWithResponse
-  };
-}
+  return obdPatterns.some(pattern => name.includes(pattern));
+};

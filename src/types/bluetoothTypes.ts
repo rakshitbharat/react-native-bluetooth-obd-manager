@@ -3,7 +3,6 @@ import { Peripheral } from 'react-native-ble-manager';
 export interface ConnectionDetails {
   serviceUUID: string;
   writeCharacteristicUUID: string;
-  readCharacteristicUUID: string;
   notifyCharacteristicUUID: string;
   writeWithResponse: boolean;
 }
@@ -13,13 +12,10 @@ export interface BluetoothState {
   isBluetoothOn: boolean;
   hasPermissions: boolean;
   isScanning: boolean;
-  discoveredDevices: Peripheral[];
-  connectedDevice: Peripheral | null;
+  discoveredDevices: any[];
+  connectedDevice: any | null;
   connectionDetails: ConnectionDetails | null;
-  isConnecting: boolean;
   isStreaming: boolean;
-  pendingCommand: string | null;
-  responseData: string;
   error: string | null;
 }
 
@@ -36,10 +32,9 @@ export enum BluetoothActionType {
   CONNECT_FAILURE = 'CONNECT_FAILURE',
   DISCONNECT_SUCCESS = 'DISCONNECT_SUCCESS',
   SEND_COMMAND = 'SEND_COMMAND',
-  RECEIVE_DATA = 'RECEIVE_DATA',
   COMPLETE_COMMAND = 'COMPLETE_COMMAND',
   RESET_STREAM = 'RESET_STREAM',
-  SET_ERROR = 'SET_ERROR',
+  SET_ERROR = 'SET_ERROR'
 }
 
 export type BluetoothAction =
