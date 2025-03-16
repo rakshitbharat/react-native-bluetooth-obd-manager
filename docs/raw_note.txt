@@ -51,3 +51,6 @@ i can se we are making more focus on getting data its fine we dont have to remov
 also at lsat the function called disconnect
 
 this project is not at all a guide to setup the libraries things add strict note that please use this application after installing all the libraries and then start using it
+
+
+please fix all lint issues or any other terminal said issues and please check readme file and write the complete test case for this project
