@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import BleManager from 'react-native-ble-manager';
+
 import { bluetoothReducer, initialState } from './bluetoothReducer';
-import { requestBluetoothPermissions, checkBluetoothState } from '../utils/permissionUtils';
+import { BluetoothActionType, BluetoothState } from '../types/bluetoothTypes';
 import { decodeData, isResponseComplete, encodeCommand, formatResponse } from '../utils/dataUtils';
 import { findServiceAndCharacteristic } from '../utils/deviceUtils';
-import { BluetoothActionType, BluetoothState } from '../types/bluetoothTypes';
+import { requestBluetoothPermissions, checkBluetoothState } from '../utils/permissionUtils';
 
 // Create the context
 export const BluetoothContext = createContext<any>(null);
@@ -49,12 +50,12 @@ const OBD_CHARACTERISTIC_UUIDS = [
 // Singleton for BLE data receiver
 class BLEDataReceiver {
   static instance: BLEDataReceiver;
-  responseBuffer: string = '';
+  responseBuffer = '';
   rawResponseBuffer: number[] = [];
   rawCompleteResponse: number[] | null = null;
-  completeResponseReceived: boolean = false;
+  completeResponseReceived = false;
   lastError: Error | null = null;
-  receiveStartTime: number = 0;
+  receiveStartTime = 0;
 
   static getInstance(): BLEDataReceiver {
     if (!BLEDataReceiver.instance) {

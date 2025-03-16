@@ -1,17 +1,18 @@
 import { Platform } from 'react-native';
 import BleManager from 'react-native-ble-manager';
+
 import { ConnectionDetails } from '../types/bluetoothTypes';
 
 // Common ELM327 service UUIDs
 const COMMON_OBD_SERVICES = [
-  'FFE0',  // Most common ELM327 service
-  'FFF0',  // Alternative service
-  '18F0',  // Used by some older adapters
-  'BEEF',  // Used by some Chinese adapters
-  'E7A1',  // Another variant
-  'FFE1',  // Some Chinese clones
-  'FFF1',  // Another clone variant
-  'FF00',  // Generic OBD service
+  'FFE0', // Most common ELM327 service
+  'FFF0', // Alternative service
+  '18F0', // Used by some older adapters
+  'BEEF', // Used by some Chinese adapters
+  'E7A1', // Another variant
+  'FFE1', // Some Chinese clones
+  'FFF1', // Another clone variant
+  'FF00', // Generic OBD service
 ];
 
 // Common characteristic UUIDs for old adapters
@@ -66,16 +67,15 @@ const findWriteCharacteristic = (characteristics: any[]): any => {
   if (!writeChar) {
     writeChar = characteristics.find(c => {
       const props = c.properties || {};
-      return props.WriteWithoutResponse === 'WriteWithoutResponse' || 
-             props.writeWithoutResponse === true;
+      return (
+        props.WriteWithoutResponse === 'WriteWithoutResponse' || props.writeWithoutResponse === true
+      );
     });
   }
 
   // If still not found, try matching by UUID
   if (!writeChar) {
-    writeChar = characteristics.find(c => 
-      isOBDCharacteristic(c.characteristic)
-    );
+    writeChar = characteristics.find(c => isOBDCharacteristic(c.characteristic));
   }
 
   return writeChar;
@@ -91,9 +91,7 @@ const findNotifyCharacteristic = (characteristics: any[]): any => {
 
   // If not found, try matching by UUID
   if (!notifyChar) {
-    notifyChar = characteristics.find(c => 
-      isOBDCharacteristic(c.characteristic)
-    );
+    notifyChar = characteristics.find(c => isOBDCharacteristic(c.characteristic));
   }
 
   return notifyChar;
@@ -101,86 +99,63 @@ const findNotifyCharacteristic = (characteristics: any[]): any => {
 
 export const findServiceAndCharacteristic = async (
   deviceId: string,
-  retryCount = 3
 ): Promise<ConnectionDetails | null> => {
-  while (retryCount > 0) {
-    try {
-      const deviceInfo = await BleManager.retrieveServices(deviceId);
-      
-      // Find OBD service
-      let service = deviceInfo.services.find(s => isOBDService(s.uuid));
-      
-      // If no standard service found, try alternative approach
-      if (!service) {
-        // Look for any service that has characteristics
-        for (const s of deviceInfo.services) {
-          const chars = deviceInfo.characteristics.filter(c => c.service === s.uuid);
-          if (chars.length > 0) {
-            service = s;
-            break;
-          }
+  try {
+    const deviceInfo = await BleManager.retrieveServices(deviceId);
+
+    if (!deviceInfo.services || !deviceInfo.characteristics) {
+      throw new Error('Failed to retrieve services or characteristics');
+    }
+
+    // Try to find an OBD service first
+    let service = deviceInfo.services.find(s => isOBDService(s.uuid));
+
+    // If no OBD service found, try to find any service with characteristics
+    if (!service) {
+      for (const s of deviceInfo.services) {
+        const chars = deviceInfo.characteristics.filter(c => c.service === s.uuid);
+        if (chars.length > 0) {
+          service = s;
+          break;
         }
       }
-      
-      if (!service) {
-        throw new Error('No suitable service found');
-      }
-
-      // Get characteristics for this service
-      const characteristics = deviceInfo.characteristics.filter(
-        c => c.service === service!.uuid
-      );
-
-      // Find write and notify characteristics
-      const writeCharacteristic = findWriteCharacteristic(characteristics);
-      const notifyCharacteristic = findNotifyCharacteristic(characteristics);
-
-      if (!writeCharacteristic || !notifyCharacteristic) {
-        throw new Error('Required characteristics not found');
-      }
-
-      const writeWithResponse = 
-        writeCharacteristic.properties?.Write === 'Write' ||
-        writeCharacteristic.properties?.write === true;
-
-      return {
-        serviceUUID: service.uuid,
-        writeCharacteristicUUID: writeCharacteristic.characteristic,
-        notifyCharacteristicUUID: notifyCharacteristic.characteristic,
-        writeWithResponse
-      };
-
-    } catch (error) {
-      console.warn('Service discovery attempt failed:', error);
-      retryCount--;
-      
-      if (retryCount === 0) {
-        console.error('Service discovery failed after all retries');
-        return null;
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
     }
-  }
 
-  return null;
+    if (!service) {
+      return null;
+    }
+
+    // Find characteristics for the service
+    const characteristics = deviceInfo.characteristics.filter(c => c.service === service!.uuid);
+
+    // Find write and notify characteristics
+    const writeCharacteristic = findWriteCharacteristic(characteristics);
+    const notifyCharacteristic = findNotifyCharacteristic(characteristics);
+
+    if (!writeCharacteristic || !notifyCharacteristic) {
+      throw new Error('Required characteristics not found');
+    }
+
+    const writeWithResponse = writeCharacteristic.properties?.Write === 'Write';
+
+    return {
+      serviceUUID: service.uuid,
+      writeCharacteristicUUID: writeCharacteristic.characteristic,
+      notifyCharacteristicUUID: notifyCharacteristic.characteristic,
+      writeWithResponse,
+    };
+  } catch (error) {
+    console.warn('Service discovery attempt failed:', error);
+    return null;
+  }
 };
 
 // Utility to check if a device is likely an OBD adapter
 export const isLikelyOBDDevice = (device: any): boolean => {
   const name = (device.name || device.localName || '').toLowerCase();
-  
+
   // Common OBD device name patterns
-  const obdPatterns = [
-    'obd',
-    'elm',
-    'car',
-    'vgate',
-    'obdii',
-    'eobd',
-    'scanner',
-    'diagnostic'
-  ];
-  
+  const obdPatterns = ['obd', 'elm', 'car', 'vgate', 'obdii', 'eobd', 'scanner', 'diagnostic'];
+
   return obdPatterns.some(pattern => name.includes(pattern));
 };

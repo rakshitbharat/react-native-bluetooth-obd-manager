@@ -1,6 +1,7 @@
-import { Peripheral } from 'react-native-ble-manager';
-import { ConnectionDetails } from '../types/bluetoothTypes';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Peripheral } from 'react-native-ble-manager';
+
+import { ConnectionDetails } from '../types/bluetoothTypes';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -82,7 +83,7 @@ export class DeviceManager {
   /**
    * Remember a device that has been connected to
    */
-  public async rememberDevice(device: Peripheral, isOBDDevice: boolean = true): Promise<void> {
+  public async rememberDevice(device: Peripheral, isOBDDevice = true): Promise<void> {
     const existingIndex = this.knownDevices.findIndex(d => d.id === device.id);
 
     if (existingIndex >= 0) {

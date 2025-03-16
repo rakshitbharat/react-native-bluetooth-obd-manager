@@ -1,5 +1,5 @@
-import { TextDecoder } from 'text-decoding';
 import convertString from 'convert-string';
+import { TextDecoder } from 'text-decoding';
 
 // Common response terminators for OBD devices
 const TERMINATORS = ['>', '\r\r>', '\r\n>', '\n>'];

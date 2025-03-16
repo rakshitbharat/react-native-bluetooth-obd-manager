@@ -1,5 +1,6 @@
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import BleManager from 'react-native-ble-manager';
+
 import { checkBluetoothPermissions, checkBluetoothState } from './permissionUtils';
 import { BluetoothActionType } from '../types/bluetoothTypes';
 

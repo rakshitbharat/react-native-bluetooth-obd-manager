@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { ConnectionDetails } from '../types/bluetoothTypes';
 
 const STORAGE_PREFIX = '@OBDManager:';

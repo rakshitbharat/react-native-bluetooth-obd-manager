@@ -1,6 +1,6 @@
+import { logBluetoothError } from '../utils/errorUtils';
 import { ECUConnector, ELM_COMMANDS, RSP_ID } from '../utils/obdUtils';
 import { formatPidCommand, convertPidValue } from '../utils/pidUtils';
-import { logBluetoothError } from '../utils/errorUtils';
 
 // Default timeouts 
 const DEFAULT_TIMEOUT = 5000;
@@ -52,7 +52,7 @@ export class OBDManager {
   private connectionState: ConnectionState = ConnectionState.DISCONNECTED;
   private protocol: OBDProtocol = OBDProtocol.AUTO;
   private eventListeners: OBDEventListener[] = [];
-  private autoReconnect: boolean = false;
+  private autoReconnect = false;
   private streamingManager = StreamingStateManager.getInstance();
   
   private constructor() {}
@@ -306,8 +306,8 @@ export class OBDManager {
 export class StreamingStateManager {
   private static instance: StreamingStateManager;
   private timeoutId: NodeJS.Timeout | null = null;
-  private startTime: number = 0;
-  private isStreaming: boolean = false;
+  private startTime = 0;
+  private isStreaming = false;
   private readonly MAX_STREAM_DURATION = 4000; // 4 seconds
 
   static getInstance(): StreamingStateManager {

@@ -1,4 +1,5 @@
 import { Platform, NativeEventEmitter, NativeModules } from 'react-native';
+import BleManager from 'react-native-ble-manager';
 import {
   PERMISSIONS,
   check,
@@ -7,7 +8,6 @@ import {
   checkMultiple,
   requestMultiple,
 } from 'react-native-permissions';
-import BleManager from 'react-native-ble-manager';
 
 // Get required permissions based on platform and version
 const getRequiredPermissions = () => {

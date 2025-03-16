@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import OBDManager, { ConnectionState, OBDEventType, OBDProtocol } from '../managers/OBDManager';
+
 import { useBluetooth } from './useBluetooth';
 import { useECUCommands } from './useECUCommands';
+import OBDManager, { ConnectionState, OBDEventType, OBDProtocol } from '../managers/OBDManager';
 
 interface OBDManagerState {
   connectionState: ConnectionState;

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+
 import { useOBDManager } from './useOBDManager';
 import { parseEngineRPM, parseVehicleSpeed, parseEngineCoolantTemp, parseThrottlePosition } from '../utils/obdDataUtils';
 import { STANDARD_PIDS } from '../utils/obdUtils';

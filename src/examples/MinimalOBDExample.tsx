@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+
 import { useBluetooth } from '../context/BluetoothContext';
 
 export const MinimalOBDExample: React.FC = () => {
-  const { 
+  const {
     isBluetoothOn,
     hasPermissions,
     isScanning,
@@ -13,7 +14,7 @@ export const MinimalOBDExample: React.FC = () => {
     connectToDevice,
     disconnect,
     sendCommand,
-    requestPermissions
+    requestPermissions,
   } = useBluetooth();
 
   const [loading, setLoading] = useState(false);
@@ -22,7 +23,7 @@ export const MinimalOBDExample: React.FC = () => {
   const handleConnect = async (deviceId: string) => {
     try {
       setLoading(true);
-      
+
       // Connect to device
       const connected = await connectToDevice(deviceId);
       if (!connected) {
@@ -34,7 +35,7 @@ export const MinimalOBDExample: React.FC = () => {
       await sendCommand('ATZ'); // Reset
       await sendCommand('ATE0'); // Echo off
       await sendCommand('ATL0'); // Linefeeds off
-      
+
       Alert.alert('Success', 'Connected and initialized');
     } catch (error) {
       Alert.alert('Error', (error as Error).message);
@@ -46,7 +47,7 @@ export const MinimalOBDExample: React.FC = () => {
   // Disconnect from device
   const handleDisconnect = async () => {
     if (!connectedDevice) return;
-    
+
     try {
       setLoading(true);
       await disconnect(connectedDevice.id);
@@ -106,20 +107,18 @@ export const MinimalOBDExample: React.FC = () => {
         <Text>Connected: {connectedDevice ? 'Yes' : 'No'}</Text>
       </View>
 
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[styles.button, isScanning && styles.buttonDisabled]}
         onPress={handleScan}
         disabled={isScanning || loading}
       >
-        <Text style={styles.buttonText}>
-          {isScanning ? 'Scanning...' : 'Scan for Devices'}
-        </Text>
+        <Text style={styles.buttonText}>{isScanning ? 'Scanning...' : 'Scan for Devices'}</Text>
       </TouchableOpacity>
 
       {discoveredDevices.length > 0 && (
         <View style={styles.devices}>
           <Text style={styles.header}>Found Devices:</Text>
-          {discoveredDevices.map(device => (
+          {discoveredDevices.map((device: { id: string; name?: string }) => (
             <TouchableOpacity
               key={device.id}
               style={styles.device}
@@ -135,15 +134,11 @@ export const MinimalOBDExample: React.FC = () => {
 
       {connectedDevice && (
         <View style={styles.controls}>
-          <TouchableOpacity 
-            style={styles.button}
-            onPress={handleTestCommand}
-            disabled={loading}
-          >
+          <TouchableOpacity style={styles.button} onPress={handleTestCommand} disabled={loading}>
             <Text style={styles.buttonText}>Test Command</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.button, styles.disconnectButton]}
             onPress={handleDisconnect}
             disabled={loading}

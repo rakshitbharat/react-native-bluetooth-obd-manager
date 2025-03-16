@@ -43,8 +43,8 @@ export const createBluetoothError = (
 // Retry utility for notification operations
 export const retryNotification = async (
   operation: () => Promise<any>,
-  maxRetries: number = 3,
-  delayMs: number = 1000,
+  maxRetries = 3,
+  delayMs = 1000,
 ): Promise<any> => {
   let lastError: Error | null = null;
 
@@ -191,7 +191,7 @@ export const logBluetoothError = (error: any, context?: string): void => {
 export const attemptRecovery = async (
   error: any,
   retryFn: () => Promise<any>,
-  maxAttempts: number = 3,
+  maxAttempts = 3,
 ): Promise<any> => {
   let attempts = 0;
   let lastError = error;

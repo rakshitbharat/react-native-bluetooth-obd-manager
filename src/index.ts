@@ -8,6 +8,7 @@
  */
 
 // Core context and hooks
+import { BluetoothProvider } from './context/BluetoothContext';
 export { BluetoothProvider, useBluetooth } from './context/BluetoothContext';
 export { useOBDManager } from './hooks/useOBDManager';
 export { useDeviceDetection } from './hooks/useDeviceDetection';
@@ -35,4 +36,4 @@ export { logBluetoothError, BluetoothErrorType } from './utils/errorUtils';
 export { requestBluetoothPermissions, checkBluetoothState } from './utils/permissionUtils';
 
 // Export the BluetoothProvider as default for convenience
-export { BluetoothProvider as default };
+export default BluetoothProvider;

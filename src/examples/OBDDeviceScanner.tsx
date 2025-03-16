@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
+
 import { useBluetooth } from '../context/BluetoothContext';
 import { ELM_COMMANDS } from '../utils/obdUtils';
 

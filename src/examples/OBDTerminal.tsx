@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+
 import { useBluetooth } from '../context/BluetoothContext';
 import { ELM_COMMANDS } from '../utils/obdUtils';
 

@@ -1,14 +1,16 @@
-import { BluetoothOBDError, BluetoothErrorType } from './errorUtils';
-import { decodeData, encodeCommand } from './dataUtils';
-import notificationHandler from './notificationHandler';
 import { firstValueFrom, race, timer } from 'rxjs';
 import { filter, map, takeUntil } from 'rxjs/operators';
+
+import { decodeData, encodeCommand } from './dataUtils';
+import { BluetoothOBDError, BluetoothErrorType } from './errorUtils';
+import notificationHandler from './notificationHandler';
+
 
 export class CommandHandler {
   private static instance: CommandHandler;
   private lastCommand: string | null = null;
   private notificationHandler = notificationHandler;
-  private responseBuffer: string = '';
+  private responseBuffer = '';
   private readonly COMMAND_TIMEOUT = 4000; // 4 seconds
 
   private constructor() {
@@ -79,7 +81,9 @@ export class CommandHandler {
       }
       throw new BluetoothOBDError(
         BluetoothErrorType.WRITE_ERROR,
-        `Failed to send command ${command}: ${error.message}`,
+        `Failed to send command ${command}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
   }

@@ -1,5 +1,6 @@
-import { Peripheral } from 'react-native-ble-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Peripheral } from 'react-native-ble-manager';
+
 import { ConnectionDetails } from '../types/bluetoothTypes';
 
 const STORAGE_KEY = '@OBDManager:deviceHistory';
@@ -60,9 +61,14 @@ class DeviceCompatibilityManager {
   ): Promise<void> {
     await this.loadDeviceHistory();
 
-    const profile = this.deviceHistory.get(deviceId) || {
+    const profile: DeviceProfile = this.deviceHistory.get(deviceId) || {
       id: deviceId,
       name: deviceName,
+      serviceUUID: '',
+      writeCharacteristic: '',
+      notifyCharacteristic: '',
+      writeWithResponse: false,
+      lastConnected: 0,
       successCount: 0,
     };
 
@@ -91,7 +97,7 @@ class DeviceCompatibilityManager {
     };
   }
 
-  async getRecentDevices(limit: number = 5): Promise<DeviceProfile[]> {
+  async getRecentDevices(limit = 5): Promise<DeviceProfile[]> {
     await this.loadDeviceHistory();
 
     return Array.from(this.deviceHistory.values())

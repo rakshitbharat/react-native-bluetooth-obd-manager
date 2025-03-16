@@ -1,7 +1,8 @@
 import { Peripheral } from 'react-native-ble-manager';
+
 import { ConnectionDetails } from '../types/bluetoothTypes';
-import { findServiceAndCharacteristic } from '../utils/deviceUtils';
 import { encodeCommand, isResponseComplete } from '../utils/dataUtils';
+import { findServiceAndCharacteristic } from '../utils/deviceUtils';
 
 /**
  * Middleware for handling Bluetooth operations

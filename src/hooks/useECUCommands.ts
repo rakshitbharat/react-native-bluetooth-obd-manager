@@ -1,8 +1,9 @@
 import { useCallback, useEffect } from 'react';
+
 import { useBluetooth } from './useBluetooth';
 import commandHandler from '../utils/commandHandler';
-import notificationHandler from '../utils/notificationHandler';
 import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
+import notificationHandler from '../utils/notificationHandler';
 import {
   ELM_COMMANDS,
   STANDARD_PIDS,

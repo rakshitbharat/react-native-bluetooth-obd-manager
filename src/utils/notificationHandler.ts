@@ -1,5 +1,6 @@
 import { Observable, Subject } from 'rxjs';
 import { filter, map } from 'rxjs/operators';
+
 import { decodeData, isResponseComplete } from './dataUtils';
 
 interface NotificationData {
