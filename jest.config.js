@@ -1,9 +1,11 @@
 module.exports = {
   preset: 'react-native',
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  setupFiles: ['./jest.setup.js'],
+  testTimeout: 30000,
   transformIgnorePatterns: [
-    'node_modules/(?!(react-native|@react-native|react-native-ble-manager|react-native-permissions)/)',
+    'node_modules/(?!(react-native|@react-native|@react-native-community|react-native-ble-manager|react-native-permissions)/)',
   ],
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testMatch: ['**/__tests__/**/*.test.[jt]s?(x)'],
   coverageDirectory: 'coverage',

@@ -180,11 +180,25 @@ export const parseBluetoothError = (error: any): BluetoothOBDError => {
  * @param context Optional context information
  */
 export const logBluetoothError = (error: any, context?: string): void => {
-  const parsedError = error instanceof BluetoothOBDError ? error : parseBluetoothError(error);
+  let type = "UNKNOWN";
+  let message = '';
+  let details = undefined;
+  
+  if (error instanceof BluetoothOBDError) {
+    type = error.type;
+    message = error.message;
+    details = error.details;
+  } else if (error instanceof Error) {
+    message = error.message;
+  } else {
+    message = String(error);
+  }
 
   const contextPrefix = context ? `[${context}] ` : '';
   console.error(
-    `${contextPrefix}${parsedError.name} [${parsedError.type}]: ${parsedError.message}`,
+    `${contextPrefix}[Bluetooth Error][${type}]:`, 
+    message, 
+    details
   );
 };
 

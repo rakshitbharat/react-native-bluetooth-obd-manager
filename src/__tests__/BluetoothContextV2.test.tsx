@@ -1,8 +1,14 @@
 import React from 'react';
-import { renderHook } from '@testing-library/react-native';
+import { renderHook, act } from '@testing-library/react-native';
 import { BluetoothProvider, useBluetooth } from '../context/BluetoothContext';
+import { BluetoothActionType } from '../types/bluetoothTypes';
 import BleManager from 'react-native-ble-manager';
 import * as permissionUtils from '../utils/permissionUtils';
+
+// Custom waitForNextUpdate implementation
+const waitForNextUpdate = async () => {
+  await new Promise(resolve => setTimeout(resolve, 0));
+};
 
 // Mock BleManager
 jest.mock('react-native-ble-manager', () => ({
@@ -35,7 +41,7 @@ jest.mock('react-native-ble-manager', () => ({
   isPeripheralConnected: jest.fn(() => Promise.resolve(false)),
 }));
 
-// Mock permission utils
+// Mock permissions
 jest.mock('../utils/permissionUtils', () => ({
   requestBluetoothPermissions: jest.fn(() => Promise.resolve(true)),
   checkBluetoothState: jest.fn(() => Promise.resolve(true)),
@@ -43,34 +49,38 @@ jest.mock('../utils/permissionUtils', () => ({
 }));
 
 // Mock event emitter
-const mockAddListener = jest.fn().mockReturnValue({ remove: jest.fn() });
-const mockEmitter = {
-  addListener: mockAddListener,
-  removeAllListeners: jest.fn(),
-};
-
 jest.mock('react-native', () => {
-  const rn = jest.requireActual('react-native');
+  const reactNative = jest.requireActual('react-native');
   return {
-    ...rn,
-    NativeEventEmitter: jest.fn(() => mockEmitter),
-    Platform: {
-      ...rn.Platform,
-      OS: 'android',
-      select: jest.fn(obj => obj.android || obj.default),
-    },
+    ...reactNative,
     NativeModules: {
-      ...rn.NativeModules,
+      ...reactNative.NativeModules,
       BleManager: {
         addListener: jest.fn(),
         removeListeners: jest.fn(),
       },
     },
+    NativeEventEmitter: jest.fn(() => ({
+      addListener: jest.fn(() => ({
+        remove: jest.fn(),
+      })),
+      removeAllListeners: jest.fn(),
+    })),
   };
 });
 
+// Create a mock for response callbacks
+let mockResponseCallback: ((data: string) => void) | null = null;
+
+// Create a simulation function for device response
+const simulateDeviceResponse = (response: string) => {
+  if (mockResponseCallback) {
+    mockResponseCallback(response);
+  }
+};
+
 // Skip this test file for now until we can properly mock React Native components
-describe.skip('BluetoothContext', () => {
+describe.skip('BluetoothContext V2', () => {
   test('skipped tests to avoid React Native mocking issues', () => {
     expect(true).toBe(true);
   });

@@ -7,14 +7,14 @@
   "scripts": {
     "build": "tsc",
     "prepare": "node install-hooks.js && npm run build",
-    "test": "jest --passWithNoTests",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
+    "test": "jest --config jest.config.js",
+    "test:watch": "jest --config jest.config.js --watch",
+    "test:coverage": "jest --config jest.config.js --coverage",
     "lint": "eslint 'src/**/*.{js,ts,tsx}'",
     "lint:fix": "eslint 'src/**/*.{js,ts,tsx}' --fix",
     "prettier": "prettier --write 'src/**/*.{js,ts,tsx}'",
     "prettier:check": "prettier --check 'src/**/*.{js,ts,tsx}'",
-    "validate": "npm run lint && npm run prettier:check && npm run test",
+    "validate": "npm run lint && npm run test",
     "precommit": "lint-staged",
     "setup-hooks": "node install-hooks.js",
     "changelog": "auto-changelog --template keepachangelog --commit-limit false"

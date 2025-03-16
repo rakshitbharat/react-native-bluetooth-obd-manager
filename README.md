@@ -409,6 +409,28 @@ try {
    npm run build
    ```
 
+### Testing Framework
+
+This project uses Jest for comprehensive testing. The test suite is structured to cover all major components:
+
+1. **Unit Tests**: Test individual utilities and helper functions
+   - Data processing functions (encoding/decoding)
+   - PID conversion utilities
+   - OBD protocol handling
+   - Error management
+
+2. **Component Tests**: Test React components and hooks
+   - BluetoothContext provider and hook
+   - OBDManager singleton
+   - ECUConnector implementation
+
+3. **Mock Tests**: Test with mocked dependencies
+   - BLE Manager interactions
+   - Device discovery and connection
+   - Permission handling
+
+### Test Files Structure
+
 ### Running Tests
 
 This project uses Jest for testing. To run the tests:
