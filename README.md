@@ -180,6 +180,77 @@ function App() {
 }
 ```
 
+## Internal Architecture
+
+### BluetoothContext
+
+The library uses a Context-based architecture with Redux-style state management:
+
+1. **Global State Provider**
+   - Wraps entire application
+   - Manages runtime Bluetooth state
+   - Handles initialization lifecycle
+
+2. **State Management**
+   - Uses useReducer for predictable state updates
+   - Real-time Bluetooth state monitoring
+   - Automatic state persistence
+
+3. **Initialization Flow**
+   - Bluetooth module initialization check
+   - Permission verification
+   - Service discovery preparation
+
+### Data Reception System
+
+The library implements a sophisticated data reception system:
+
+1. **Notification Listener**
+   - Global singleton listener
+   - Automatic start on initialization
+   - No manual start/stop required
+   - Efficient memory management
+
+2. **Data Processing**
+   - Raw byte data handling
+   - Automatic conversion
+   - Response buffering
+   - Delimiter ('>') detection
+
+## Technical Implementation
+
+### Smart Device Discovery
+
+The library implements a robust device discovery system:
+
+1. **Service Discovery**
+   - Automatic service UUID detection
+   - Support for multiple ELM327 variants
+   - Fallback service detection
+   - Custom service mapping
+
+2. **Characteristic Handling**
+   - Dynamic write characteristic selection
+   - Support for:
+     - Write with response
+     - Write without response
+     - Multiple characteristic types
+   - Automatic characteristic selection
+
+### Command Processing
+
+1. **Command Pipeline**
+   - Automatic string to byte conversion
+   - Smart write method selection
+   - Response correlation
+   - Timeout handling
+
+2. **Streaming Management**
+   - Active streaming flag
+   - 4-second timeout protection
+   - Automatic stream recovery
+   - Out-of-sync detection
+
 ## Hook API
 
 ### useBluetooth()
@@ -206,6 +277,45 @@ const {
   requestPermissions: () => Promise<boolean>;
 } = useBluetooth();
 ```
+
+## Detailed Function Reference
+
+### connectToDevice
+
+```typescript
+const connectToDevice: (deviceId: string) => Promise<boolean>;
+```
+
+Smart connection process:
+1. Service discovery
+2. Characteristic mapping
+3. Notification setup
+4. Connection validation
+
+### sendCommand
+
+```typescript
+const sendCommand: (command: string, timeoutMs?: number) => Promise<string>;
+```
+
+Command execution flow:
+1. Command validation
+2. Byte conversion
+3. Write method selection
+4. Response correlation
+5. Delimiter detection
+
+### disconnect
+
+```typescript
+const disconnect: (deviceId: string) => Promise<boolean>;
+```
+
+Clean disconnection process:
+1. Command queue cleanup
+2. Notification handling
+3. State reset
+4. Resource cleanup
 
 ## Device Compatibility
 
