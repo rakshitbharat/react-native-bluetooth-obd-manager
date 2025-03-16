@@ -52,14 +52,10 @@ export const isResponseComplete = (response: string): boolean => {
     return true;
   }
 
-  // Check for success responses
-  const hasSuccessIndicator = SUCCESS_RESPONSES.some(success => cleanResponse.includes(success));
-
   // Check for command terminator
   const hasTerminator = TERMINATORS.some(term => response.endsWith(term));
 
   // Response is complete only if we have a terminator
-  // A success indicator alone is not enough without a proper terminator
   return hasTerminator;
 };
 
