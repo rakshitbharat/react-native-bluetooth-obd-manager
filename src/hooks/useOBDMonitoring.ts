@@ -102,7 +102,7 @@ export const useOBDMonitoring = (options: MonitoringOptions = {}) => {
         }
 
         if (enabledPids.includes('throttlePosition')) {
-          const throttleResponse = await sendCommand(STANDARD_PIDS.THROTTLE_POS);
+          const throttleResponse = await sendCommand(STANDARD_PIDS.THROTTLE_POSITION);
           const throttle = parseThrottlePosition(throttleResponse);
 
           setData(prev => ({
@@ -137,7 +137,6 @@ export const useOBDMonitoring = (options: MonitoringOptions = {}) => {
     }
 
     setIsMonitoring(false);
-    setLastError(null);
   }, []);
 
   // Clean up on unmount

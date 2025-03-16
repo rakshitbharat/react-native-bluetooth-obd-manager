@@ -70,13 +70,11 @@ jest.mock('react-native', () => {
 });
 
 // Create a mock for response callbacks
-let mockResponseCallback: ((data: string) => void) | null = null;
+const mockResponseCallback = jest.fn();
 
 // Create a simulation function for device response
 const simulateDeviceResponse = (response: string) => {
-  if (mockResponseCallback) {
-    mockResponseCallback(response);
-  }
+  mockResponseCallback(response);
 };
 
 // Skip this test file for now until we can properly mock React Native components

@@ -133,7 +133,7 @@ describe('ECUConnector', () => {
         sendCommand: mockSendCommand,
         disconnect: mockDisconnect
       });
-      connector.setDeviceId(null); // Explicitly set deviceId to null
+      connector.setDeviceId(''); // Use empty string instead of null
       
       expect(connector.isConnected()).toBe(false);
     });

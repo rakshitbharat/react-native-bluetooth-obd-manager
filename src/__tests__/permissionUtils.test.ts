@@ -33,66 +33,59 @@ describe('permissionUtils', () => {
     it('should return true when permissions are granted', async () => {
       // Mock permission check to return granted
       jest.spyOn(Permissions, 'check').mockResolvedValue('granted');
-      jest.spyOn(Permissions, 'checkMultiple').mockImplementation((permissions) => {
-        const result = {};
-        Object.keys(permissions).forEach(key => {
+      jest.spyOn(Permissions, 'checkMultiple').mockImplementation((permissions: string[]) => {
+        const result: Record<string, Permissions.PermissionStatus> = {};
+        permissions.forEach(key => {
           result[key] = 'granted';
         });
         return Promise.resolve(result);
       });
 
       const result = await checkBluetoothPermissions();
-      
       expect(result).toBe(true);
     });
 
     it('should return false when permissions are denied', async () => {
-      // Mock permission check to return denied
       jest.spyOn(Permissions, 'check').mockResolvedValue('denied');
-      jest.spyOn(Permissions, 'checkMultiple').mockImplementation((permissions) => {
-        const result = {};
-        Object.keys(permissions).forEach(key => {
+      jest.spyOn(Permissions, 'checkMultiple').mockImplementation((permissions: string[]) => {
+        const result: Record<string, Permissions.PermissionStatus> = {};
+        permissions.forEach(key => {
           result[key] = 'denied';
         });
         return Promise.resolve(result);
       });
 
       const result = await checkBluetoothPermissions();
-      
       expect(result).toBe(false);
     });
   });
 
   describe('requestBluetoothPermissions', () => {
     it('should return true when permissions are granted', async () => {
-      // Mock permission request to return granted
       jest.spyOn(Permissions, 'request').mockResolvedValue('granted');
-      jest.spyOn(Permissions, 'requestMultiple').mockImplementation((permissions) => {
-        const result = {};
-        Object.keys(permissions).forEach(key => {
+      jest.spyOn(Permissions, 'requestMultiple').mockImplementation((permissions: string[]) => {
+        const result: Record<string, Permissions.PermissionStatus> = {};
+        permissions.forEach(key => {
           result[key] = 'granted';
         });
         return Promise.resolve(result);
       });
 
       const result = await requestBluetoothPermissions();
-      
       expect(result).toBe(true);
     });
 
     it('should return false when permissions are denied', async () => {
-      // Mock permission request to return denied
       jest.spyOn(Permissions, 'request').mockResolvedValue('denied');
-      jest.spyOn(Permissions, 'requestMultiple').mockImplementation((permissions) => {
-        const result = {};
-        Object.keys(permissions).forEach(key => {
+      jest.spyOn(Permissions, 'requestMultiple').mockImplementation((permissions: string[]) => {
+        const result: Record<string, Permissions.PermissionStatus> = {};
+        permissions.forEach(key => {
           result[key] = 'denied';
         });
         return Promise.resolve(result);
       });
 
       const result = await requestBluetoothPermissions();
-      
       expect(result).toBe(false);
     });
   });

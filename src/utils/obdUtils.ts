@@ -27,6 +27,7 @@ export const ELM_COMMANDS = {
   AUTO_PROTOCOL: 'ATSP0',
   GET_PROTOCOL: 'ATDPN',  // Fixed to match test expectation
   GET_VERSION: 'ATI',
+  READ_VOLTAGE: 'AT RV',
 };
 
 // Response status identifiers
