@@ -35,3 +35,12 @@ next is we have to make a function in which we can send a string of command like
 next is very important this send command and connect to OBD device this both are the most important functions of our library and thats the reason we are here so what is diff from any other library will be and our lirbary is that our send command will return the data by firing write even if the data is received from some listner we have the logic to do so by waiting for > in the response we have that all in our ref folder so we will make this by learning from there and the next is the connect function the connection making to any bluetooth elm327 dongle is some time very dificult because some have its own way of services and charector so here we are going to make a connect function in which we just pass mac-address and even if it have any type of dongle we will connect smartly by finding best match of services and charectors
 
 next is we should do the setup of listner in our bluetooth context to receive data from bluetooth-listner then we start the notification BTW we have to start listner globally singleton out of box and we will never stop it like when we disconnect we stop listning we dont need to start because its fine if we never listen for multiple time and make a single listner
+
+next is we have to make a flag of streaming it means we wait for command its its response received or not and if constant if we have a successfull streaming we can make the flag true and for example of the command is last and we receive the > diterminator from device we can make the flag false or at any possible situation we are our of synx and if flag is true at it stays true for more then 4 sec we have to automatic make it false
+
+next is we have to make a proper disconnection in which we disconnect the device and we properly use stop notification to stop and also maintain if any internal flags or states to reset of this context
+
+here we also have to take care of asking bleutooth permission from user and also we have to take care of a listner in which whenever connect bluetooth device gets disconnected we have a real time state in which we get idea what happend to the connection
+
+all this opeations are part of BluetoothContext and its out of box hook in which we will have all the functions to make this dream possible
+
