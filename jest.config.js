@@ -5,7 +5,7 @@ module.exports = {
     'node_modules/(?!(react-native|@react-native|react-native-ble-manager|react-native-permissions)/)',
   ],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
-  testRegex: '(/__tests__/simple)\\.[jt]sx?$',
+  testMatch: ['**/__tests__/**/*.test.[jt]s?(x)'],
   coverageDirectory: 'coverage',
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',

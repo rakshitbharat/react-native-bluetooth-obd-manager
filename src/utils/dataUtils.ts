@@ -44,27 +44,23 @@ export const encodeCommand = (command: string): number[] => {
  */
 export const isResponseComplete = (response: string): boolean => {
   if (!response) return false;
-  
+
   const cleanResponse = response.trim();
-  
+
   // Check for error responses first
   if (ERROR_RESPONSES.some(err => cleanResponse.includes(err))) {
     return true;
   }
-  
+
   // Check for success responses
-  const hasSuccessIndicator = SUCCESS_RESPONSES.some(
-    success => cleanResponse.includes(success)
-  );
-  
+  const hasSuccessIndicator = SUCCESS_RESPONSES.some(success => cleanResponse.includes(success));
+
   // Check for command terminator
-  const hasTerminator = TERMINATORS.some(
-    term => response.endsWith(term)
-  );
-  
-  // Response is complete if we have a terminator,
-  // or if we have a success indicator with a carriage return
-  return hasTerminator || (hasSuccessIndicator && response.includes('\r'));
+  const hasTerminator = TERMINATORS.some(term => response.endsWith(term));
+
+  // Response is complete only if we have a terminator
+  // A success indicator alone is not enough without a proper terminator
+  return hasTerminator;
 };
 
 /**
@@ -72,25 +68,25 @@ export const isResponseComplete = (response: string): boolean => {
  */
 export const formatResponse = (response: string, command?: string): string => {
   if (!response) return '';
-  
+
   // Remove command echo if present
   let formatted = response;
   if (command) {
     const cmdStr = command.replace('\r', '');
     formatted = formatted.replace(new RegExp(`^${cmdStr}\r?`), '');
   }
-  
+
   // Remove terminators
   TERMINATORS.forEach(term => {
     formatted = formatted.replace(term, '');
   });
-  
+
   // Clean up whitespace and line endings
   formatted = formatted
-    .replace(/[\r\n]+/g, ' ')  // Replace line endings with space
-    .replace(/\s+/g, ' ')      // Normalize spaces
-    .trim();                   // Remove leading/trailing whitespace
-  
+    .replace(/[\r\n]+/g, ' ') // Replace line endings with space
+    .replace(/\s+/g, ' ') // Normalize spaces
+    .trim(); // Remove leading/trailing whitespace
+
   return formatted;
 };
 

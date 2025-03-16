@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, FlatList, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
 
 import { useBluetooth } from '../context/BluetoothContext';
 import { ELM_COMMANDS } from '../utils/obdUtils';
@@ -80,10 +87,10 @@ export const OBDDeviceScanner: React.FC = () => {
 
         // Turn off echo
         await sendCommand(ELM_COMMANDS.ECHO_OFF);
-        
+
         // Turn off line feeds
         await sendCommand(ELM_COMMANDS.LINEFEEDS_OFF);
-        
+
         // Get device info
         const version = await sendCommand(ELM_COMMANDS.GET_VERSION);
         setDeviceInfo(`Connected: ${version}`);
@@ -113,27 +120,22 @@ export const OBDDeviceScanner: React.FC = () => {
       <View style={styles.header}>
         <Text style={styles.title}>OBD Device Scanner</Text>
         <Text style={styles.status}>
-          Bluetooth: {isBluetoothOn ? 'On' : 'Off'} • 
-          Permissions: {hasPermissions ? 'Granted' : 'Not Granted'}
+          Bluetooth: {isBluetoothOn ? 'On' : 'Off'} • Permissions:{' '}
+          {hasPermissions ? 'Granted' : 'Not Granted'}
         </Text>
       </View>
 
       <View style={styles.controls}>
         {!connectedDevice ? (
-          <TouchableOpacity 
-            style={[styles.button, isScanning && styles.buttonDisabled]} 
+          <TouchableOpacity
+            style={[styles.button, isScanning && styles.buttonDisabled]}
             onPress={handleStartScan}
             disabled={isScanning}
           >
-            <Text style={styles.buttonText}>
-              {isScanning ? 'Scanning...' : 'Scan for Devices'}
-            </Text>
+            <Text style={styles.buttonText}>{isScanning ? 'Scanning...' : 'Scan for Devices'}</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity 
-            style={styles.button} 
-            onPress={handleDisconnect}
-          >
+          <TouchableOpacity style={styles.button} onPress={handleDisconnect}>
             <Text style={styles.buttonText}>Disconnect</Text>
           </TouchableOpacity>
         )}

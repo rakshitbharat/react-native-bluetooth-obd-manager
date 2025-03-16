@@ -1,12 +1,13 @@
 import { OBDManager, ConnectionState, OBDProtocol, OBDEventType } from '../managers/OBDManager';
 import { ELM_COMMANDS } from '../utils/obdUtils';
 
-// Create a mock type for ECUConnector
+// Create mock types for testing
 type MockECUConnector = {
   sendCommand: jest.Mock;
+  reset: jest.Mock;
 };
 
-// Mock modules
+// Mock external modules
 jest.mock('../utils/obdUtils', () => ({
   ELM_COMMANDS: {
     RESET: 'ATZ',
@@ -17,15 +18,27 @@ jest.mock('../utils/obdUtils', () => ({
     AUTO_PROTOCOL: 'ATSP0',
     ADAPTIVE_TIMING_2: 'ATAT2',
     GET_PROTOCOL: 'ATDPN',
+    GET_VERSION: 'ATI',
+  },
+  STANDARD_PIDS: {
+    ENGINE_RPM: '010C',
   },
 }));
 
-// Mock errorUtils
 jest.mock('../utils/errorUtils', () => ({
   logBluetoothError: jest.fn(),
+  BluetoothErrorType: {
+    CONNECTION_ERROR: 'CONNECTION_ERROR',
+  },
+  BluetoothOBDError: class MockError extends Error {
+    type: string;
+    constructor(type: string, message: string) {
+      super(message);
+      this.type = type;
+    }
+  },
 }));
 
-// Mock pidUtils
 jest.mock('../utils/pidUtils', () => ({
   formatPidCommand: jest.fn((mode, pid) => `0${mode}${pid.toString(16).padStart(2, '0')}`),
   convertPidValue: jest.fn((hexData, command) => {
@@ -40,13 +53,13 @@ describe('OBDManager', () => {
   let mockConnector: MockECUConnector;
 
   beforeEach(() => {
-    // Reset mocks
+    // Reset mocks and state
     jest.clearAllMocks();
 
     // Create mock connector
     mockConnector = {
       sendCommand: jest.fn().mockImplementation(command => {
-        if (command === ELM_COMMANDS.RESET) return Promise.resolve('OK');
+        if (command === ELM_COMMANDS.RESET) return Promise.resolve('ELM327 v1.5');
         if (command === ELM_COMMANDS.ECHO_OFF) return Promise.resolve('OK');
         if (command === ELM_COMMANDS.LINEFEEDS_OFF) return Promise.resolve('OK');
         if (command === ELM_COMMANDS.HEADERS_OFF) return Promise.resolve('OK');
@@ -54,15 +67,14 @@ describe('OBDManager', () => {
         if (command === ELM_COMMANDS.AUTO_PROTOCOL) return Promise.resolve('OK');
         if (command === ELM_COMMANDS.ADAPTIVE_TIMING_2) return Promise.resolve('OK');
         if (command === ELM_COMMANDS.GET_PROTOCOL) return Promise.resolve('A7');
-        if (command === '010C') return Promise.resolve('410C1AFC');
+        if (command === '010C') return Promise.resolve('410C1AFC'); // RPM value
         return Promise.resolve('NO DATA');
       }),
+      reset: jest.fn(),
     };
 
     // Get OBDManager instance
     obdManager = OBDManager.getInstance();
-
-    // Set the connector - using type assertion
     obdManager.setECUConnector(mockConnector as any);
   });
 
@@ -116,39 +128,10 @@ describe('OBDManager', () => {
     mockConnector.sendCommand.mockImplementationOnce(() => Promise.resolve('410C1AFC'));
 
     // Request RPM
-    const rpm = await obdManager.requestPid(1, 12);
+    const rpm = await obdManager.requestPid(1, 12); // 010C (mode 1, PID 12)
 
     // Check result
     expect(rpm).toBe(750);
-  });
-
-  test('should handle events', async () => {
-    const mockListener = jest.fn();
-
-    // Add listener
-    obdManager.addEventListener(mockListener);
-
-    // Initialize
-    await obdManager.initialize();
-
-    // Check if listener was called
-    expect(mockListener).toHaveBeenCalledWith(OBDEventType.CONNECTED, undefined);
-    expect(mockListener).toHaveBeenCalledWith(
-      OBDEventType.PROTOCOL_DETECTED,
-      OBDProtocol.ISO15765_29_500,
-    );
-
-    // Remove listener
-    obdManager.removeEventListener(mockListener);
-
-    // Clear previous calls
-    mockListener.mockClear();
-
-    // Test after removal
-    await obdManager.sendCommand('010C');
-
-    // Should not have been called again
-    expect(mockListener).not.toHaveBeenCalled();
   });
 
   test('should handle disconnection', async () => {

@@ -1,12 +1,10 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import BleManager from 'react-native-ble-manager';
-
 import { bluetoothReducer, initialState } from './bluetoothReducer';
-import { BluetoothActionType, BluetoothState } from '../types/bluetoothTypes';
-import { decodeData, isResponseComplete, encodeCommand, formatResponse } from '../utils/dataUtils';
-import { findServiceAndCharacteristic } from '../utils/deviceUtils';
 import { requestBluetoothPermissions, checkBluetoothState } from '../utils/permissionUtils';
+import { decodeData, isResponseComplete, encodeCommand, formatResponse } from '../utils/dataUtils';
+import { BluetoothActionType } from '../types/bluetoothTypes';
 
 // Create the context
 export const BluetoothContext = createContext<any>(null);
@@ -537,6 +535,41 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return false;
     }
   };
+
+  // Set up notification handler
+  useEffect(() => {
+    if (connectedDevice && connectionDetails) {
+      try {
+        // Subscribe to value changes
+        const sub = bleEmitter.addListener(
+          'BleManagerDidUpdateValueForCharacteristic',
+          handleNotification,
+        );
+
+        // Start notifications
+        BleManager.startNotification(
+          connectedDevice.id,
+          connectionDetails.serviceUUID,
+          connectionDetails.notifyCharacteristicUUID,
+        ).catch(error => {
+          console.warn('Failed to start notifications:', error);
+        });
+
+        // Clean up
+        return () => {
+          sub.remove();
+          if (connectedDevice) {
+            disconnect(connectedDevice.id).catch(error => {
+              console.warn('Disconnect failed on cleanup:', error);
+            });
+          }
+        };
+      } catch (error) {
+        console.warn('Notification setup error:', error);
+      }
+    }
+    return () => {};
+  }, [connectedDevice, connectionDetails, disconnect, handleNotification]);
 
   // Context value
   const contextValue = {

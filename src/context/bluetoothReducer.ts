@@ -58,7 +58,7 @@ export const bluetoothReducer = (
         isScanning: false,
       };
 
-    case BluetoothActionType.DEVICE_DISCOVERED:
+    case BluetoothActionType.DEVICE_DISCOVERED: {
       // Prevent duplicate devices
       const exists = state.discoveredDevices.some(device => device.id === action.payload.id);
 
@@ -68,6 +68,7 @@ export const bluetoothReducer = (
           ? state.discoveredDevices
           : [...state.discoveredDevices, action.payload],
       };
+    }
 
     case BluetoothActionType.CONNECT_START:
       return {
