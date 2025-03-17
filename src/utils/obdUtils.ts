@@ -16,6 +16,25 @@ export enum OBDProtocol {
   SAE_J1939 = 10,
 }
 
+// Standard OBD-II PIDs (mode 01)
+export const STANDARD_PIDS = {
+  ENGINE_RPM: '010C',
+  VEHICLE_SPEED: '010D',
+  ENGINE_COOLANT_TEMP: '0105',
+  INTAKE_AIR_TEMP: '010F',
+  MAF_SENSOR: '0110',
+  THROTTLE_POS: '0111',
+  O2_VOLTAGE: '0114',
+  FUEL_PRESSURE: '010A',
+  TIMING_ADVANCE: '010E',
+  FUEL_LEVEL: '012F',
+  BAROMETRIC_PRESSURE: '0133',
+  CONTROL_MODULE_VOLTAGE: '0142',
+  AMBIENT_AIR_TEMP: '0146',
+  FUEL_TYPE: '0151',
+  ENGINE_OIL_TEMP: '015C'
+};
+
 // ELM327 command definitions
 export const ELM_COMMANDS = {
   RESET: 'ATZ',
@@ -62,21 +81,30 @@ export const parseProtocolResponse = (response: string): string => {
 
   // Find protocol ID in descriptive response
   const protocolMap: Record<string, string> = {
-    'SAE J1850 PWM': '1',
-    'SAE J1850 VPW': '2',
-    'ISO 9141-2': '3',
-    'ISO 14230-4 (KWP 5BAUD)': '4',
-    'ISO 14230-4 (KWP FAST)': '5',
     'ISO 15765-4 (CAN 11/500)': '6',
     'ISO 15765-4 (CAN 29/500)': '7',
     'ISO 15765-4 (CAN 11/250)': '8',
     'ISO 15765-4 (CAN 29/250)': '9',
-    'SAE J1939 (CAN 29/250)': 'A',
+    'ISO 14230-4 (KWP 5BAUD)': '4',
+    'ISO 14230-4 (KWP FAST)': '5',
+    'ISO 9141-2': '3',
+    'SAE J1850 VPW': '2',
+    'SAE J1850 PWM': '1'
   };
 
   for (const [key, value] of Object.entries(protocolMap)) {
     if (cleanResponse.includes(key)) {
       return value;
+    }
+  }
+
+  // Handle AUTO responses
+  if (cleanResponse.startsWith('AUTO')) {
+    // Extract protocol from AUTO response
+    for (const [key, value] of Object.entries(protocolMap)) {
+      if (cleanResponse.includes(key)) {
+        return value;
+      }
     }
   }
 

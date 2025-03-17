@@ -24,9 +24,21 @@ export function isResponseComplete(response: string): boolean {
 /**
  * Format OBD response 
  */
-export function formatResponse(response: string): string {
-  return response.trim();
-}
+export const formatResponse = (response: string, command: string): string => {
+  // Remove any leading/trailing whitespace
+  const trimmed = response.trim();
+  
+  // Remove the prompt character
+  const withoutPrompt = trimmed.replace(/>\s*$/, '');
+  
+  // Remove the echo of the command
+  const withoutEcho = withoutPrompt.replace(new RegExp(`^${command}\\s*`, 'i'), '');
+  
+  // Clean up any remaining whitespace
+  const cleaned = withoutEcho.trim();
+  
+  return cleaned;
+};
 
 /**
  * Check if response indicates an error

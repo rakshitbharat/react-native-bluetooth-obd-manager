@@ -1,6 +1,9 @@
-import { Platform, NativeEventEmitter, NativeModules, EmitterSubscription } from 'react-native';
+import { Platform, NativeEventEmitter, NativeModules, EmitterSubscription, PermissionsAndroid } from 'react-native';
 import BleManager from 'react-native-ble-manager';
 import { PERMISSIONS, RESULTS, checkMultiple } from 'react-native-permissions';
+
+const retryAttempts = 2;
+const retryDelay = 1000;
 
 // Get required permissions based on platform and version
 const getRequiredPermissions = () => {
@@ -19,58 +22,87 @@ const getRequiredPermissions = () => {
 };
 
 /**
- * Request all required Bluetooth permissions
+ * Request Bluetooth permissions for the app
  */
-export const requestBluetoothPermissions = async (retryAttempts = 2): Promise<boolean> => {
-  let attempt = 1;
-  while (attempt <= retryAttempts) {
-    try {
-      // For now, just check state - implement actual permission requests later
-      const state = await checkBluetoothState();
-      if (state) {
-        return true;
-      }
-    } catch (error) {
-      console.error('Error requesting permissions:', error);
+export async function requestBluetoothPermissions(attempt = 1): Promise<boolean> {
+  try {
+    if (Platform.OS === 'ios') {
+      return true; // iOS handles permissions through Info.plist
     }
+
+    // Android permissions
+    const granted = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+      'android.permission.BLUETOOTH_SCAN',
+      'android.permission.BLUETOOTH_CONNECT',
+    ]);
+
+    const allGranted = Object.values(granted).every(
+      status => status === PermissionsAndroid.RESULTS.GRANTED
+    );
+
+    if (allGranted) {
+      return true;
+    }
+
+    // If not all permissions were granted and we have attempts left, retry
+    if (attempt < retryAttempts) {
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      return requestBluetoothPermissions(attempt + 1);
+    }
+
+    // If this was our last attempt, return false
+    console.warn('Failed to get all required permissions after', attempt, 'attempts');
+    return false;
+  } catch (error) {
+    console.error('Error requesting permissions:', error);
+    return false;
+  }
+}
+
+/**
+ * Check if all required Bluetooth permissions are granted
+ */
+export async function checkBluetoothPermissions(attempt = 1): Promise<boolean> {
+  try {
+    if (Platform.OS === 'ios') {
+      return true; // iOS handles permissions through Info.plist
+    }
+
+    // Android permissions
+    const results = await Promise.all([
+      PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION),
+      PermissionsAndroid.check('android.permission.BLUETOOTH_SCAN'),
+      PermissionsAndroid.check('android.permission.BLUETOOTH_CONNECT'),
+    ]);
+
+    return results.every(result => result === true);
+  } catch (error) {
+    console.error('Error checking permissions:', error);
+    return false;
+  }
+}
+
+/**
+ * Check Bluetooth state
+ */
+export async function checkBluetoothState(attempt = 1): Promise<boolean> {
+  try {
+    const state = await BleManager.checkState();
+    return state === 'on';
+  } catch (error) {
+    console.error('Error checking Bluetooth state:', error);
     
     // If this was our last attempt, return false
     if (attempt === retryAttempts) {
-      console.warn('Failed to get all required permissions after', attempt, 'attempts');
       return false;
     }
     
-    // Wait before retrying
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    attempt++;
+    // Otherwise retry after delay
+    await new Promise(resolve => setTimeout(resolve, retryDelay));
+    return checkBluetoothState(attempt + 1);
   }
-  return false;
-};
-
-/**
- * Check Bluetooth state with retries
- */
-export const checkBluetoothState = async (retryAttempts = 2): Promise<boolean> => {
-  let attempt = 1;
-  while (attempt <= retryAttempts) {
-    try {
-      const state = await BleManager.checkState();
-      return state === 'on';
-    } catch (error) {
-      console.error('Error checking Bluetooth state:', error);
-      
-      // If this was our last attempt, return false
-      if (attempt === retryAttempts) {
-        return false;
-      }
-      
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      attempt++;
-    }
-  }
-  return false;
-};
+}
 
 // Monitor Bluetooth state changes
 export const startBluetoothStateMonitoring = (
@@ -112,19 +144,6 @@ export const validatePermissions = async (): Promise<boolean> => {
     return Object.values(statuses).every(status => status === RESULTS.GRANTED);
   } catch (error) {
     console.error('Error validating permissions:', error);
-    return false;
-  }
-};
-
-/**
- * Check if we have all required Bluetooth permissions
- */
-export const checkBluetoothPermissions = async (): Promise<boolean> => {
-  try {
-    // Implement platform-specific permission checks here
-    return true;
-  } catch (error) {
-    console.error('Error checking permissions:', error);
     return false;
   }
 };

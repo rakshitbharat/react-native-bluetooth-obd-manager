@@ -1,6 +1,7 @@
 import BleManager, { Peripheral } from 'react-native-ble-manager';
-
-import { ConnectionDetails } from '../types/bluetoothTypes';
+import type { PeripheralInfo } from 'react-native-ble-manager';
+import type { ConnectionDetails } from '../types/bluetoothTypes';
+import { Platform } from 'react-native';
 
 // Common service UUIDs for OBD adapters
 const SERVICE_UUIDS = [
@@ -11,58 +12,63 @@ const SERVICE_UUIDS = [
 ];
 
 /**
- * Find compatible service and characteristics for OBD device
+ * Default UUIDs
+ */
+const DEFAULT_SERVICE_UUID = 'FFE0';
+const DEFAULT_CHARACTERISTIC_UUID = 'FFE1';
+
+/**
+ * Find suitable Bluetooth service and characteristics for OBD communication
  */
 export async function findServiceAndCharacteristic(
-  deviceId: string
+  peripheral: PeripheralInfo,
 ): Promise<ConnectionDetails | null> {
   try {
-    // Get device services
-    const info = await BleManager.retrieveServices(deviceId);
-
-    if (!info.services || !info.characteristics) {
-      console.error('No services or characteristics found');
+    if (!peripheral?.services?.length) {
       return null;
     }
 
-    // Find OBD service
-    const service = info.services.find(s => {
-      const uuid = s.uuid.toLowerCase();
-      return SERVICE_UUIDS.some(id => 
-        uuid === id || uuid === `0000${id}-0000-1000-8000-00805f9b34fb`
-      );
+    // Find suitable service
+    const service = peripheral.services.find(s => {
+      const uuid = Platform.OS === 'ios' ? s.uuid.toLowerCase() : s.uuid;
+      return uuid.includes('ffe0') || uuid.includes('fff0');
     });
 
     if (!service) {
-      console.error('No compatible OBD service found');
       return null;
     }
 
-    // Find characteristics for this service
-    const characteristics = info.characteristics.filter(
-      c => c.service === service.uuid
+    // Find characteristics
+    const characteristics = peripheral.characteristics?.filter(
+      c => c.service === service.uuid,
     );
 
-    // Find write characteristic (needs Write property)
-    const writeCharacteristic = characteristics.find(c => 
-      c.properties.Write || c.properties.WriteWithoutResponse
+    if (!characteristics?.length) {
+      return null;
+    }
+
+    // Find write characteristic (prefer write without response)
+    const writeCharacteristic = characteristics.find(
+      c => c.properties?.WriteWithoutResponse || c.properties?.Write,
     );
 
-    // Find notify characteristic (needs Notify property)
-    const notifyCharacteristic = characteristics.find(c => 
-      c.properties.Notify || c.properties.Indicate
+    // Find notify characteristic
+    const notifyCharacteristic = characteristics.find(
+      c => c.properties?.Notify || c.characteristic === DEFAULT_CHARACTERISTIC_UUID,
     );
 
     if (!writeCharacteristic || !notifyCharacteristic) {
-      console.error('Required characteristics not found');
       return null;
     }
+
+    // Determine write type
+    const writeWithResponse = !writeCharacteristic.properties?.WriteWithoutResponse;
 
     return {
       serviceUUID: service.uuid,
       writeCharacteristicUUID: writeCharacteristic.characteristic,
       notifyCharacteristicUUID: notifyCharacteristic.characteristic,
-      writeWithResponse: !!writeCharacteristic.properties.Write
+      writeWithResponse,
     };
   } catch (error) {
     console.error('Error finding service/characteristics:', error);

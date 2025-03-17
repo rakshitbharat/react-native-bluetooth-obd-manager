@@ -63,12 +63,13 @@ jest.mock('react-native', () => {
   };
 });
 
+// Create a wrapper provider for testing
+const wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <BluetoothProvider>{children}</BluetoothProvider>
+);
+
 describe('BluetoothContextV2', () => {
   it('should initialize with BluetoothProvider', async () => {
-    const wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-      <BluetoothProvider>{children}</BluetoothProvider>
-    );
-
     const { result } = renderHook(() => useBluetooth(), { wrapper });
     
     await act(async () => {
