@@ -268,7 +268,13 @@ export class BluetoothECUConnector implements IECUConnector {
       }, timeoutMs);
       
       // Wait for response
-      const response = await this.responsePromise!;
+      if (!this.responsePromise) {
+        throw new BluetoothOBDError(
+          BluetoothErrorType.WRITE_ERROR,
+          'Response promise not initialized'
+        );
+      }
+      const response = await this.responsePromise;
       return formatResponse(response, command);
     } catch (error) {
       if (error instanceof BluetoothOBDError) {

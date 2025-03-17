@@ -1,11 +1,11 @@
-import { OBDManager, ConnectionState, OBDProtocol, OBDEventType } from '../managers/OBDManager';
+import { OBDManager, OBDProtocol } from '../managers/OBDManager';
 import { ELM_COMMANDS } from '../utils/obdUtils';
 
 // Create mock types for testing
-type MockECUConnector = {
+interface MockECUConnector {
   sendCommand: jest.Mock;
   reset: jest.Mock;
-};
+}
 
 // Mock external modules
 jest.mock('../utils/obdUtils', () => ({
@@ -20,29 +20,11 @@ jest.mock('../utils/obdUtils', () => ({
     GET_PROTOCOL: 'ATDPN',
     GET_VERSION: 'ATI',
   },
-  STANDARD_PIDS: {
-    ENGINE_RPM: '010C',
-  },
-}));
-
-jest.mock('../utils/errorUtils', () => ({
-  logBluetoothError: jest.fn(),
-  BluetoothErrorType: {
-    CONNECTION_ERROR: 'CONNECTION_ERROR',
-  },
-  BluetoothOBDError: class MockError extends Error {
-    type: string;
-    constructor(type: string, message: string) {
-      super(message);
-      this.type = type;
-    }
-  },
 }));
 
 jest.mock('../utils/pidUtils', () => ({
   formatPidCommand: jest.fn((mode, pid) => `0${mode}${pid.toString(16).padStart(2, '0')}`),
   convertPidValue: jest.fn((hexData, command) => {
-    console.log('Mock convertPidValue called with:', hexData, command);
     if (command.toUpperCase() === '010C') return 750; // RPM
     return null;
   }),
@@ -75,7 +57,7 @@ describe('OBDManager', () => {
 
     // Get OBDManager instance
     obdManager = OBDManager.getInstance();
-    obdManager.setECUConnector(mockConnector as any);
+    obdManager.setECUConnector(mockConnector);
   });
 
   test('should be a singleton', () => {

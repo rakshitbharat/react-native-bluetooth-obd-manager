@@ -1,175 +1,79 @@
-import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
+import { NativeEventEmitter, NativeModules } from 'react-native';
 import BleManager from 'react-native-ble-manager';
 
-import { checkBluetoothPermissions, checkBluetoothState } from './permissionUtils';
-import { BluetoothAction, BluetoothActionType } from '../types/bluetoothTypes';
+import { BluetoothErrorType, BluetoothOBDError } from './errorUtils';
+import type { BluetoothState } from '../types/bluetoothTypes';
 
+// BLE Manager module name
 const BleManagerModule = NativeModules.BleManager;
 const bleEmitter = new NativeEventEmitter(BleManagerModule);
 
-interface CharacteristicData {
-  peripheral: string;
-  characteristic: string;
-  service: string;
-  value: number[];
-}
-
-/**
- * Initialize Bluetooth functionality
- * @param dispatch Function to dispatch actions to the BluetoothContext reducer
- * @returns Cleanup function to remove event listeners
- */
-export const initializeBluetooth = async (
-  dispatch: React.Dispatch<BluetoothAction>
-): Promise<() => void> => {
+// Initialize Bluetooth functionality
+export const initializeBluetooth = async (): Promise<BluetoothState> => {
   try {
-    // Start the BLE Manager
     await BleManager.start({ showAlert: false });
-    dispatch({ type: BluetoothActionType.INITIALIZE_SUCCESS });
-
-    // Check initial Bluetooth state and permissions
-    const bluetoothState = await checkBluetoothState();
-    dispatch({
-      type: BluetoothActionType.UPDATE_BLUETOOTH_STATE,
-      payload: bluetoothState
-    });
-
-    const permissions = await checkBluetoothPermissions();
-    dispatch({
-      type: BluetoothActionType.UPDATE_PERMISSIONS,
-      payload: permissions
-    });
-
-    // Set up event listeners
-    const stateChangeListener = bleEmitter.addListener(
-      'BleManagerDidUpdateState',
-      ({ state }) => {
-        const isOn = state === 'on';
-        dispatch({
-          type: BluetoothActionType.UPDATE_BLUETOOTH_STATE,
-          payload: isOn
-        });
-      }
-    );
-
-    const disconnectListener = bleEmitter.addListener(
-      'BleManagerDisconnectPeripheral',
-      ({ peripheral }) => {
-        dispatch({ 
-          type: BluetoothActionType.DISCONNECT_SUCCESS 
-        });
-      }
-    );
-
-    const discoverListener = bleEmitter.addListener(
-      'BleManagerDiscoverPeripheral',
-      (device) => {
-        if (device.name || device.advertising?.localName) {
-          dispatch({
-            type: BluetoothActionType.DEVICE_DISCOVERED,
-            payload: {
-              ...device,
-              name: device.name || device.advertising?.localName || 'Unknown Device'
-            }
-          });
-        }
-      }
-    );
-
-    // Return cleanup function
-    return () => {
-      stateChangeListener.remove();
-      disconnectListener.remove();
-      discoverListener.remove();
-      
-      // Stop scanning if app closes
-      BleManager.stopScan().catch((error) => {
-        console.warn('Error when stopping scan during cleanup:', error);
-      });
+    return {
+      isInitialized: true,
+      isBluetoothOn: false, // Will be updated by state check
+      hasPermissions: false, // Will be updated by permission check
+      isScanning: false,
+      discoveredDevices: [],
+      connectedDevice: null,
+      connectionDetails: null,
+      error: null,
     };
   } catch (error) {
-    console.error('Failed to initialize Bluetooth:', error);
-    dispatch({ type: BluetoothActionType.INITIALIZE_FAILURE });
-    return () => {}; // Return empty cleanup function
+    throw new BluetoothOBDError(
+      BluetoothErrorType.INITIALIZATION_ERROR,
+      `Failed to initialize Bluetooth: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 };
 
-/**
- * Setup notification handling for a connected device
- * @param deviceId Connected device ID
- * @param serviceUUID Service UUID
- * @param characteristicUUID Notification characteristic UUID
- * @param dataHandler Function to process received data
- */
-export const setupNotifications = async (
-  deviceId: string,
-  serviceUUID: string,
-  characteristicUUID: string,
-  dataHandler: (data: CharacteristicData) => void
-): Promise<() => void> => {
-  try {
-    // Start notifications on the characteristic
-    await BleManager.startNotification(
-      deviceId,
-      serviceUUID,
-      characteristicUUID
-    );
-    
-    // Listen for notification data
-    const dataListener = bleEmitter.addListener(
-      'BleManagerDidUpdateValueForCharacteristic',
-      (data) => {
-        if (data.peripheral === deviceId) {
-          dataHandler(data);
-        }
-      }
-    );
-    
-    // Return cleanup function
-    return () => {
-      dataListener.remove();
-      BleManager.stopNotification(deviceId, serviceUUID, characteristicUUID)
-        .catch((error) => {
-          console.warn('Error stopping notification:', error);
-        });
-    };
-  } catch (error) {
-    console.error('Failed to setup notifications:', error);
-    return () => {}; // Return empty cleanup function
-  }
+// Set up Bluetooth event handlers
+export const setupEventHandlers = (handlers: {
+  onStateChange?: (state: boolean) => void;
+  onDeviceDisconnect?: (deviceId: string) => void;
+  onData?: (data: { peripheral: string; value: number[] }) => void;
+}) => {
+  const { onStateChange, onDeviceDisconnect, onData } = handlers;
+
+  // State change handler
+  const stateChangeListener = onStateChange
+    ? bleEmitter.addListener('BleManagerDidUpdateState', ({ state }) => {
+        onStateChange(state === 'on');
+      })
+    : null;
+
+  // Disconnect handler
+  const disconnectListener = onDeviceDisconnect
+    ? bleEmitter.addListener('BleManagerDisconnectPeripheral', ({ peripheral }) => {
+        onDeviceDisconnect(peripheral);
+      })
+    : null;
+
+  // Data handler
+  const dataListener = onData
+    ? bleEmitter.addListener('BleManagerDidUpdateValueForCharacteristic', onData)
+    : null;
+
+  // Return cleanup function
+  return () => {
+    if (stateChangeListener) stateChangeListener.remove();
+    if (disconnectListener) disconnectListener.remove();
+    if (dataListener) dataListener.remove();
+  };
 };
 
-export async function startDeviceNotifications(
-  deviceId: string,
-  serviceUUID: string,
-  characteristicUUID: string,
-  dataHandler: (data: any) => void
-): Promise<() => void> {
-  try {
-    const bleEmitter = new NativeEventEmitter(BleManagerModule);
-    
-    // Setup notification listener
-    const dataListener = bleEmitter.addListener(
-      'BleManagerDidUpdateValueForCharacteristic',
-      (data) => {
-        if (data.peripheral === deviceId) {
-          dataHandler(data);
-        }
-      }
-    );
-    
-    // Return cleanup function
-    return () => {
-      dataListener.remove();
-      BleManager.stopNotification(deviceId, serviceUUID, characteristicUUID)
-        .catch((error) => {
-          console.warn('Error stopping notification:', error);
-        });
-    };
-  } catch (error) {
-    console.error('Failed to setup notifications:', error);
-    return () => {
-      // Cleanup not needed since setup failed
-    };
+// Helper function to handle device discovery
+export const handleDeviceDiscovery = (
+  device: { name?: string; id: string; rssi?: number },
+  onDeviceFound: (device: { name: string; id: string; rssi?: number }) => void
+) => {
+  if (device && (device.name || device.id)) {
+    onDeviceFound({
+      ...device,
+      name: device.name || `Device (${device.id})`,
+    });
   }
-}
+};

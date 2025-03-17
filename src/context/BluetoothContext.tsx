@@ -1,9 +1,11 @@
-import React, { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
-import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
-import BleManager, { Peripheral } from 'react-native-ble-manager';
+import React, { createContext, useCallback, useContext, useEffect, useReducer, useRef } from 'react';
+import { NativeEventEmitter, NativeModules } from 'react-native';
+import BleManager from 'react-native-ble-manager';
+
 import { bluetoothReducer, initialState } from './bluetoothReducer';
-import { BluetoothActionType, BluetoothState } from '../types/bluetoothTypes';
+import { BluetoothState, BluetoothActionType } from '../types/bluetoothTypes';
 import { decodeData, isResponseComplete, encodeCommand, formatResponse } from '../utils/dataUtils';
+import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
 import { requestBluetoothPermissions, checkBluetoothState } from '../utils/permissionUtils';
 
 interface BluetoothContextType extends BluetoothState {
@@ -169,7 +171,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       console.error('Disconnect failed:', error);
       return false;
     }
-  }, [connectedDevice, connectionDetails]);
+  }, [connectedDevice, connectionDetails, sendCommand]);
 
   // Handle data notifications from device
   const handleNotification = useCallback((data: { value: number[]; peripheral: string }) => {
@@ -452,12 +454,15 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [connectedDevice, disconnect]);
 
   // Enhanced sendCommand with direct response waiting
-  const sendCommand = async (
+  const sendCommand = useCallback(async (
     command: string,
     timeoutMs: number = COMMAND_DEFAULT_TIMEOUT,
   ): Promise<string> => {
     if (!connectedDevice || !connectionDetails) {
-      throw new Error('No device connected');
+      throw new BluetoothOBDError(
+        BluetoothErrorType.CONNECTION_ERROR,
+        'No device connected'
+      );
     }
 
     dataReceiver.reset();
@@ -468,7 +473,6 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     try {
       dispatch({ type: BluetoothActionType.SEND_COMMAND, payload: command });
 
-      // Send command based on write characteristic type
       if (connectionDetails.writeWithResponse) {
         await BleManager.write(
           connectedDevice.id,
@@ -485,7 +489,6 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         );
       }
 
-      // Wait for response using dataReceiver
       await dataReceiver.waitForResponse(timeoutMs);
 
       const { response, error } = dataReceiver.getResponse();
@@ -496,9 +499,12 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return formatResponse(response, command);
     } catch (error) {
       dispatch({ type: BluetoothActionType.RESET_STREAM });
-      throw error;
+      throw new BluetoothOBDError(
+        BluetoothErrorType.WRITE_ERROR,
+        `Failed to send command: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
-  };
+  }, [connectedDevice, connectionDetails, dispatch]);
 
   // Set up notification handler
   useEffect(() => {

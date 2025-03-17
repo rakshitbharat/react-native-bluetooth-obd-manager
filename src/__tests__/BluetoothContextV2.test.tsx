@@ -1,15 +1,8 @@
+import { it, describe, expect } from '@jest/globals';
 import { renderHook, act } from '@testing-library/react-native';
 import React from 'react';
-import BleManager from 'react-native-ble-manager';
 
 import { BluetoothProvider, useBluetooth } from '../context/BluetoothContext';
-import { BluetoothActionType } from '../types/bluetoothTypes';
-import * as permissionUtils from '../utils/permissionUtils';
-
-// Custom waitForNextUpdate implementation
-const waitForNextUpdate = async () => {
-  await new Promise(resolve => setTimeout(resolve, 0));
-};
 
 // Mock BleManager
 jest.mock('react-native-ble-manager', () => ({
@@ -70,10 +63,19 @@ jest.mock('react-native', () => {
   };
 });
 
-import { it, describe, expect } from '@jest/globals';
-
 describe('BluetoothContextV2', () => {
-  it('should initialize correctly', () => {
-    expect(true).toBe(true); // Placeholder until tests are implemented
+  it('should initialize with BluetoothProvider', async () => {
+    const wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+      <BluetoothProvider>{children}</BluetoothProvider>
+    );
+
+    const { result } = renderHook(() => useBluetooth(), { wrapper });
+    
+    await act(async () => {
+      // Wait for any async initialization
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    expect(result.current).toBeDefined();
   });
 });

@@ -1,4 +1,4 @@
-import { OBDManager, ConnectionState, OBDProtocol, OBDEventType } from '../managers/OBDManager';
+import { OBDManager, OBDProtocol } from '../managers/OBDManager';
 import { ELM_COMMANDS } from '../utils/obdUtils';
 
 // Create a mock type for ECUConnector
@@ -29,7 +29,6 @@ jest.mock('../utils/errorUtils', () => ({
 jest.mock('../utils/pidUtils', () => ({
   formatPidCommand: jest.fn((mode, pid) => `0${mode}${pid.toString(16).padStart(2, '0')}`),
   convertPidValue: jest.fn((hexData, command) => {
-    console.log('Mock convertPidValue called with:', hexData, command);
     if (command.toUpperCase() === '010C') return 750; // RPM
     return null;
   }),
@@ -62,8 +61,8 @@ describe('OBDManager', () => {
     // Get OBDManager instance
     obdManager = OBDManager.getInstance();
 
-    // Set the connector - using type assertion
-    obdManager.setECUConnector(mockConnector as any);
+    // Set the connector
+    obdManager.setECUConnector(mockConnector as MockECUConnector);
   });
 
   test('should be a singleton', () => {

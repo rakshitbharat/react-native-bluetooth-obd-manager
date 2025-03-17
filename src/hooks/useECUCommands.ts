@@ -38,7 +38,7 @@ export const useECUCommands = () => {
       }
 
       // Create write function for the command handler
-      const writeFn = async (commandBytes: number[]) => {
+      const writeFn = async () => {
         if (connectionDetails.writeWithResponse) {
           await rawSendCommand(command, timeoutMs);
         } else {

@@ -1,7 +1,7 @@
-import { decodeData, formatResponse, isResponseComplete } from './dataUtils';
-import { BluetoothErrorType, BluetoothOBDError } from './errorUtils';
+// Standard OBD Protocol message terminator
+const MSG_DELIMITER = '\r';
 
-// Define OBD protocols
+// Define supported OBD protocols
 export enum OBDProtocol {
   AUTO = 0,
   J1850PWM = 1,
@@ -37,127 +37,89 @@ export const ELM_COMMANDS = {
   GET_PROTOCOL: 'ATDPN',
 };
 
-// Response status identifiers
-export enum RSP_ID {
-  OK = 'OK',
-  SEARCHING = 'SEARCHING...',
-  NO_DATA = 'NO DATA',
-  ERROR = 'ERROR',
-  UNABLE_TO_CONNECT = 'UNABLE TO CONNECT',
-  CAN_ERROR = 'CAN ERROR',
-  STOPPED = 'STOPPED',
-  BUFFER_FULL = 'BUFFER FULL',
-}
-
-// OBD Service modes
-export const OBD_SERVICE_MODES = {
-  NONE: 0x00,
-  DATA: 0x01,
-  FREEZEFRAME: 0x02,
-  READ_CODES: 0x03,
-  CLEAR_CODES: 0x04,
-  O2_RESULT: 0x05,
-  MON_RESULT: 0x06,
-  PENDINGCODES: 0x07,
-  CTRL_MODE: 0x08,
-  VEH_INFO: 0x09,
-  PERMACODES: 0x0a,
+/**
+ * Create a string command with carriage return
+ */
+export const createCommand = (command: string): string => {
+  return command.endsWith(MSG_DELIMITER) ? command : `${command}${MSG_DELIMITER}`;
 };
-
-// Standard PIDs for OBD-II
-export const STANDARD_PIDS = {
-  SUPPORTED_PIDS_1_20: '0100',
-  MONITOR_STATUS: '0101',
-  ENGINE_RPM: '010C',
-  VEHICLE_SPEED: '010D',
-  MAF_SENSOR: '0110',
-  O2_SENSORS: '0113',
-  OBD_STANDARDS: '011C',
-  SUPPORTED_PIDS_21_40: '0120',
-  THROTTLE_POS: '0111',
-  ENGINE_COOLANT_TEMP: '0105',
-  FUEL_PRESSURE: '010A',
-  INTAKE_MAP: '010B',
-  TIMING_ADVANCE: '010E',
-  INTAKE_TEMP: '010F',
-  FUEL_SYSTEM_STATUS: '0103',
-  FUEL_LEVEL: '012F',
-  BAROMETRIC_PRESSURE: '0133',
-  CONTROL_MODULE_VOLTAGE: '0142',
-  ABS_ENGINE_LOAD: '0143',
-  AMBIENT_TEMP: '0146',
-  VIN: '0902',
-};
-
-// ECU response end markers
-const END_OF_MSG = '>';
-
-export interface ECUConnector {
-  sendCommand(command: string, timeoutMs?: number): Promise<string>;
-  disconnect(): Promise<void>;
-  isConnected(): boolean;
-}
 
 /**
- * Create a raw ECU connector that doesn't process responses
+ * Parse the response from protocol query
  */
-export const createRawECUConnector = (
-  sendCommandFn: (command: string, timeoutMs?: number) => Promise<string>,
-): ECUConnector => {
-  return {
-    sendCommand: sendCommandFn,
-    disconnect: async () => {
-      try {
-        await sendCommandFn(ELM_COMMANDS.RESET);
-      } catch (error) {
-        // Ignore reset errors during disconnect
-      }
-    },
-    isConnected: () => true,
+export const parseProtocolResponse = (response: string): string => {
+  // Clean response and convert to uppercase for consistency
+  const cleanResponse = response.trim().toUpperCase();
+
+  // Handle different response formats
+  if (cleanResponse.length === 1) {
+    return cleanResponse;
+  }
+
+  if (cleanResponse.length === 2) {
+    return cleanResponse[0];
+  }
+
+  // Find protocol ID in descriptive response
+  const protocolMap: Record<string, string> = {
+    'SAE J1850 PWM': '1',
+    'SAE J1850 VPW': '2',
+    'ISO 9141-2': '3',
+    'ISO 14230-4 (KWP 5BAUD)': '4',
+    'ISO 14230-4 (KWP FAST)': '5',
+    'ISO 15765-4 (CAN 11/500)': '6',
+    'ISO 15765-4 (CAN 29/500)': '7',
+    'ISO 15765-4 (CAN 11/250)': '8',
+    'ISO 15765-4 (CAN 29/250)': '9',
+    'SAE J1939 (CAN 29/250)': 'A',
   };
-};
 
-/**
- * Create a decoded ECU connector that processes responses
- */
-export const createDecodedECUConnector = (
-  sendCommandFn: (command: string, timeoutMs?: number) => Promise<string>,
-): ECUConnector => {
-  let responseBuffer = '';
-  let lastCommand: string | null = null;
-
-  const processResponse = (response: string): string => {
-    // Add to buffer
-    responseBuffer += response;
-
-    // Check if response is complete
-    if (isResponseComplete(responseBuffer)) {
-      const completeResponse = formatResponse(responseBuffer, lastCommand || '');
-      responseBuffer = '';
-      return completeResponse;
+  for (const [key, value] of Object.entries(protocolMap)) {
+    if (cleanResponse.includes(key)) {
+      return value;
     }
+  }
 
-    throw new BluetoothOBDError(
-      BluetoothErrorType.WRITE_ERROR,
-      'Incomplete response'
+  return 'UNKNOWN';
+};
+
+/**
+ * Determine OBD protocol from code
+ */
+export const determineOBDProtocol = (code: string): string => {
+  const protocolMap: Record<string, string> = {
+    '1': 'ISO_15765_4_CAN_11_500',
+    '2': 'ISO_15765_4_CAN_29_500',
+    '3': 'ISO_15765_4_CAN_11_250',
+    '4': 'ISO_15765_4_CAN_29_250',
+    '5': 'ISO_14230_4_KWP_5_BAUD',
+    '6': 'ISO_14230_4_KWP_FAST',
+    '7': 'ISO_9141_2',
+    '8': 'SAE_J1850_VPW',
+    '9': 'SAE_J1850_PWM',
+    'A': 'ISO15765_29_500',
+    'B': 'USER1_CAN',
+    'C': 'USER2_CAN',
+  };
+
+  return protocolMap[code] || 'AUTO';
+};
+
+/**
+ * Evaluate initialization status from responses
+ */
+export const evaluateInitializationStatus = (responses: string[]): boolean => {
+  if (responses.length < 2) return false;
+
+  // Check for any error responses
+  const hasErrors = responses.some(response => {
+    const cleanResponse = response.trim().toUpperCase();
+    return (
+      cleanResponse.includes('ERROR') ||
+      cleanResponse.includes('UNABLE TO CONNECT') ||
+      cleanResponse.includes('NO DATA')
     );
-  };
+  });
 
-  return {
-    sendCommand: async (command: string, timeoutMs?: number) => {
-      lastCommand = command;
-      const rawResponse = await sendCommandFn(command, timeoutMs);
-      return processResponse(rawResponse);
-    },
-    disconnect: async () => {
-      try {
-        await sendCommandFn(ELM_COMMANDS.RESET);
-      } catch (error) {
-        // Ignore reset errors during disconnect
-      }
-      responseBuffer = '';
-      lastCommand = null;
-    },
-    isConnected: () => true,
-  };
+  return !hasErrors;
 };
