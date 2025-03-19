@@ -14,6 +14,7 @@ import { BluetoothState } from '../types/bluetoothTypes';
 import { decodeData, isResponseComplete, encodeCommand, formatResponse } from '../utils/dataUtils';
 import { findServiceAndCharacteristic, isOBDDevice } from '../utils/deviceUtils';
 import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
+import notificationHandler, { RawResponse } from '../utils/notificationHandler';
 import { requestBluetoothPermissions, checkBluetoothState } from '../utils/permissionUtils';
 import {
   addDeviceToHistory,
@@ -21,7 +22,6 @@ import {
   getRecentDevices,
   saveLastConnectedDevice,
 } from '../utils/statePersistence';
-import notificationHandler, { RawResponse } from '../utils/notificationHandler';
 
 export interface BluetoothContextType extends BluetoothState {
   scanDevices: (timeoutMs?: number) => Promise<boolean>;

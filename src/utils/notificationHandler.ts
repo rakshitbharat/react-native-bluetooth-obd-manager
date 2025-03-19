@@ -1,7 +1,6 @@
 import { Observable, Subject } from 'rxjs';
 import { filter, map } from 'rxjs/operators';
 import { NativeEventEmitter, NativeModules } from 'react-native';
-import BleManager from 'react-native-ble-manager';
 
 import { decodeData, isResponseComplete } from './dataUtils';
 import { BluetoothOBDError, BluetoothErrorType } from './errorUtils';
@@ -151,6 +150,13 @@ export class NotificationHandler {
         }
       })
     );
+  }
+
+  reset(): void {
+    this.clearBuffers();
+    if (streamingManager.isStreamingActive()) {
+      streamingManager.stopStreaming();
+    }
   }
 
   cleanup(): void {
