@@ -1,7 +1,7 @@
 import { useContext } from 'react';
 
 import { BluetoothContext } from '../context/BluetoothContext';
-import { BluetoothContextValue, BluetoothState } from '../types/bluetoothTypes';
+import { BluetoothContextValue } from '../types/bluetoothTypes';
 import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
 
 /**

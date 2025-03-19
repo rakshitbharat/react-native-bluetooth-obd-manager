@@ -154,9 +154,9 @@ export const bluetoothReducer = (
       return { ...state, error: null };
     case BluetoothActionType.SET_PENDING_COMMAND:
       return { ...state, pendingCommand: action.payload };
-    default:
-      const _exhaustiveCheck: never = action;
+    default: {
       return state;
+    }
   }
 };
 

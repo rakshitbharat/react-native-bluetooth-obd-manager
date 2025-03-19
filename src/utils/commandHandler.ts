@@ -1,4 +1,4 @@
-import { Observable, firstValueFrom, race, Subject, timer } from 'rxjs';
+import { Observable, firstValueFrom, Subject, timer } from 'rxjs';
 import { filter, take, timeout } from 'rxjs/operators';
 
 import { isResponseComplete } from './dataUtils';

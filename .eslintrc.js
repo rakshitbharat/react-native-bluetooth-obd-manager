@@ -1,3 +1,4 @@
+/** @type {import('eslint').Linter.Config} */
 module.exports = {
   root: true,
   parser: '@typescript-eslint/parser',
@@ -7,7 +8,9 @@ module.exports = {
     ecmaFeatures: {
       jsx: true,
     },
-    project: './tsconfig.json',
+    tsconfigRootDir: __dirname,
+    project: ['./tsconfig.json'],
+    createDefaultProgram: true
   },
   extends: [
     'eslint:recommended',
@@ -83,4 +86,4 @@ module.exports = {
       },
     },
   ],
-}; 
+};

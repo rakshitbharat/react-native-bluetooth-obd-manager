@@ -11,8 +11,6 @@ import {
   parseDTCResponse,
 } from '../utils/obdUtils';
 
-// Default connection timeout
-const DEFAULT_TIMEOUT = 10000;
 // Default command timeout
 const DEFAULT_COMMAND_TIMEOUT = 4000;
 

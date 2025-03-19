@@ -4,9 +4,6 @@
 
 import { BluetoothOBDError, BluetoothErrorType } from './errorUtils';
 
-// Standard OBD Protocol message terminator
-const MSG_DELIMITER = '\r';
-
 // Define supported OBD protocols
 export enum OBDProtocol {
   AUTO = 0,

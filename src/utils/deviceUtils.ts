@@ -16,12 +16,6 @@ const SERVICE_UUIDS = [
 ];
 
 /**
- * Default UUIDs
- */
-const DEFAULT_SERVICE_UUID = 'FFE0';
-const DEFAULT_CHARACTERISTIC_UUID = 'FFE1';
-
-/**
  * Find suitable Bluetooth service and characteristics for OBD communication
  * Smartly detects the right service and characteristics for different types of OBD adapters
  */

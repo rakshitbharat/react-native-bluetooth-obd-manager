@@ -6,11 +6,11 @@ import React, {
   useReducer,
   useRef,
 } from 'react';
-import { NativeEventEmitter, NativeModules, Platform, EmitterSubscription } from 'react-native';
+import { NativeEventEmitter, NativeModules } from 'react-native';
 import BleManager from 'react-native-ble-manager';
 
 import { bluetoothReducer, initialState, BluetoothActionType } from './bluetoothReducer';
-import { BluetoothState, ConnectionDetails } from '../types/bluetoothTypes';
+import { BluetoothState } from '../types/bluetoothTypes';
 import { decodeData, isResponseComplete, encodeCommand, formatResponse } from '../utils/dataUtils';
 import { findServiceAndCharacteristic, isOBDDevice } from '../utils/deviceUtils';
 import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
@@ -44,22 +44,6 @@ const bleEmitter = new NativeEventEmitter(BleManagerModule);
 const CONNECTION_RETRY_ATTEMPTS = 3;
 const CONNECTION_RETRY_DELAY = 1000;
 const COMMAND_DEFAULT_TIMEOUT = 4000;
-
-// OBD characteristic UUIDs
-const DEFAULT_CHARACTERISTIC_UUID_SHORT = 'fff1';
-const DEFAULT_CHARACTERISTIC_UUID =
-  Platform.OS === 'android' ? 'fff1' : '0000fff1-0000-1000-8000-00805f9b34fb';
-
-// Common ELM327 service UUIDs for reference - used in service discovery
-const OBD_SERVICE_UUIDS = [
-  'FFF0', // Most common
-  'FFE0', // Alternative service
-  '18F0', // Used by older adapters
-  'BEEF', // Used by Chinese adapters
-  'E7A1', // Another variant
-  'FFE1', // Some Chinese clones
-  'FFF1', // Another clone variant
-];
 
 /**
  * Singleton class to handle Bluetooth data reception from OBD devices

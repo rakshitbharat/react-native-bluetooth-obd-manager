@@ -2,10 +2,8 @@ import {
   Platform,
   NativeEventEmitter,
   NativeModules,
-  EmitterSubscription,
   PermissionsAndroid,
 } from 'react-native';
-import BleManager from 'react-native-ble-manager';
 import { PERMISSIONS, RESULTS, checkMultiple } from 'react-native-permissions';
 
 import { BluetoothErrorType, BluetoothOBDError } from './errorUtils';

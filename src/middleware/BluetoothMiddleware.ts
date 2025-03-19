@@ -27,11 +27,9 @@ export class BluetoothMiddleware {
     }
     return BluetoothMiddleware.instance;
   }
-
   public async findOBDConnectionDetails(deviceId: string): Promise<ConnectionDetails | null> {
     try {
       // First retrieve peripheral info with services
-      const BleManager = require('react-native-ble-manager').default;
       const peripheralInfo = await BleManager.retrieveServices(deviceId);
       
       // Leverage the device utils to find appropriate connection details

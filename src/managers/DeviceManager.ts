@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NativeEventEmitter, NativeModules } from 'react-native';
-import BleManager, { Characteristic, Peripheral } from 'react-native-ble-manager';
+import BleManager, { Peripheral } from 'react-native-ble-manager';
 
 import { ConnectionDetails, ScanOptions } from '../types/bluetoothTypes';
 import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';

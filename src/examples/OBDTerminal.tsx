@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 
 import useBluetooth from '../hooks/useBluetooth';
-import { ScrollViewMethod } from '../types/declarations';
 import { ELM_COMMANDS } from '../utils/obdUtils';
 
 interface LogEntry {
