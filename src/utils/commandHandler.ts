@@ -1,9 +1,9 @@
 import { Observable, firstValueFrom, race, Subject, timer } from 'rxjs';
 import { filter, take, timeout } from 'rxjs/operators';
 
+import { isResponseComplete } from './dataUtils';
 import { BluetoothErrorType, BluetoothOBDError } from './errorUtils';
 import notificationHandler from './notificationHandler';
-import { isResponseComplete } from './dataUtils';
 
 // Default timeout in ms
 const DEFAULT_TIMEOUT = 5000;

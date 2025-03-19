@@ -1,4 +1,5 @@
 import { Peripheral } from 'react-native-ble-manager';
+
 import { BluetoothOBDError } from '../utils/errorUtils';
 
 export interface BluetoothDeviceInfo {

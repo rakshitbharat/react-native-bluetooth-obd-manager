@@ -1,8 +1,8 @@
 import BleManager from 'react-native-ble-manager';
 
 import { BluetoothContextValue } from '../types/bluetoothTypes';
-import { BluetoothErrorType, BluetoothOBDError } from '../utils/errorUtils';
 import { decodeData, encodeCommand, formatResponse, isResponseComplete } from '../utils/dataUtils';
+import { BluetoothErrorType, BluetoothOBDError } from '../utils/errorUtils';
 
 /**
  * Interface for any ECU connector implementation

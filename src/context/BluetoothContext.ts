@@ -1,7 +1,7 @@
 import { createContext } from 'react';
 
-import { BluetoothState } from '../types/bluetoothTypes';
 import useBluetooth from '../hooks/useBluetooth';
+import { BluetoothState } from '../types/bluetoothTypes';
 
 // Initialize with default values
 const initialState: BluetoothState = {
