@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useBluetooth } from './useBluetooth';
+import useBluetooth from '../hooks/useBluetooth';
 import { BluetoothDeviceInfo } from '../types/bluetoothTypes';
 
 /**

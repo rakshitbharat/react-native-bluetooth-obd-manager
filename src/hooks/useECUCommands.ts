@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 
-import { useBluetooth } from './useBluetooth';
+import useBluetooth from '../hooks/useBluetooth';
 import commandHandler from '../utils/commandHandler';
 import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
 import notificationHandler from '../utils/notificationHandler';
