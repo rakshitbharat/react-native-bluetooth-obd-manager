@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 
 import useBluetooth from '../hooks/useBluetooth';
 import { ELM_COMMANDS } from '../utils/obdUtils';
+import { ScrollViewMethod } from '../types/declarations';
 
 interface LogEntry {
   type: 'sent' | 'received' | 'error' | 'info';

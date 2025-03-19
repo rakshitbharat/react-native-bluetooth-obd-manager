@@ -113,7 +113,10 @@ export enum BluetoothActionType {
   RESET = 'RESET',
 }
 
-export type BluetoothAction = { type: BluetoothActionType | string; payload?: any };
+export type BluetoothAction = {
+  type: BluetoothActionType | string;
+  payload?: any;
+};
 
 // Define a context interface to fix errors in useBluetooth
 export interface BluetoothContextValue {

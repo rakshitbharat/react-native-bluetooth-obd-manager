@@ -182,3 +182,13 @@ declare module '@react-native-async-storage/async-storage' {
   };
   export default AsyncStorage;
 }
+
+export interface ScrollViewMethod {
+  scrollToEnd: (params?: { animated?: boolean }) => void;
+}
+
+export type ScrollViewRef = React.RefObject<ScrollViewMethod>;
+
+// Add re-exported React Native components that need typing
+export const FlatList: React.ComponentClass<FlatListProps<any>>;
+export const ScrollView: React.ComponentClass<any> & ScrollViewMethod;
