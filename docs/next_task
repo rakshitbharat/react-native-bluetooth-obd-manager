@@ -12,3 +12,15 @@ Automatic Streaming Timeout Safety Net
 Current streaming timeout is implemented but distributed across multiple places
 Need to consolidate the 4-second timeout logic into a single, reliable mechanism
 Should handle edge cases like partial responses or communication interruption
+
+
+here i can see streamingManager is used but thats wrong streamingManager is so much important that it should be used in the main this NotificationHandler
+
+also the 
+this.streamingManager.stopStreaming();
+
+should have watched on a global level and on a singlelong level of NotificationHandler in a way that if we dont receive any notification within given timer like 4 sec it should be stoped by calling 
+this.streamingManager.stopStreaming();
+
+so StreamingStateManager
+should have its own file and its own place its very important
