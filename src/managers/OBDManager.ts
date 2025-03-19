@@ -1,6 +1,7 @@
 import { logBluetoothError } from '../utils/errorUtils';
 import { ECUConnector, ELM_COMMANDS } from '../utils/obdUtils';
 import { formatPidCommand, convertPidValue } from '../utils/pidUtils';
+import streamingManager from '../utils/streamingStateManager';
 
 // Default timeouts 
 const DEFAULT_TIMEOUT = 5000;
@@ -50,59 +51,6 @@ interface OBDEventData {
 type OBDEventListener = (event: OBDEventType, data?: OBDEventData) => void;
 
 /**
- * Streaming State Manager
- * Manages OBD command streaming state and timeouts
- */
-export class StreamingStateManager {
-  private static instance: StreamingStateManager;
-  private timeoutId: NodeJS.Timeout | null = null;
-  private startTime = 0;
-  private isStreaming = false;
-  private readonly MAX_STREAM_DURATION = 4000; // 4 seconds
-
-  static getInstance(): StreamingStateManager {
-    if (!StreamingStateManager.instance) {
-      StreamingStateManager.instance = new StreamingStateManager();
-    }
-    return StreamingStateManager.instance;
-  }
-
-  startStreaming(): void {
-    this.isStreaming = true;
-    this.startTime = Date.now();
-    this.setStreamTimeout();
-  }
-
-  stopStreaming(): void {
-    this.isStreaming = false;
-    this.clearStreamTimeout();
-  }
-
-  private setStreamTimeout(): void {
-    this.clearStreamTimeout();
-    this.timeoutId = setTimeout(() => {
-      console.warn('Stream timeout - force stopping stream');
-      this.stopStreaming();
-    }, this.MAX_STREAM_DURATION);
-  }
-
-  private clearStreamTimeout(): void {
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
-      this.timeoutId = null;
-    }
-  }
-
-  isStreamingActive(): boolean {
-    return this.isStreaming;
-  }
-
-  getStreamDuration(): number {
-    return this.isStreaming ? Date.now() - this.startTime : 0;
-  }
-}
-
-/**
  * OBD Manager Class
  * Handles high-level OBD communication and state management
  */
@@ -113,7 +61,6 @@ export class OBDManager {
   private protocol: OBDProtocol = OBDProtocol.AUTO;
   private eventListeners: OBDEventListener[] = [];
   private autoReconnect = false;
-  private streamingManager = StreamingStateManager.getInstance();
   
   /** 
    * Private constructor for singleton pattern.
@@ -292,13 +239,10 @@ export class OBDManager {
     }
     
     try {
-      this.streamingManager.startStreaming();
+      streamingManager.startStreaming();
       const response = await this.ecuConnector.sendCommand(command, timeout);
-      this.streamingManager.stopStreaming();
-      this.notifyListeners(OBDEventType.DATA_RECEIVED, { command, response });
       return response;
     } catch (error) {
-      this.streamingManager.stopStreaming();
       logBluetoothError(error, `OBDManager.sendCommand(${command})`);
       this.notifyListeners(OBDEventType.ERROR, { error: error as Error });
       throw error;
