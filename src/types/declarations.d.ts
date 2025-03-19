@@ -106,24 +106,22 @@ declare module 'react-native-ble-manager' {
       characteristicUUID: string,
       data: number[],
     ): Promise<void>;
-    write(
+    read(peripheralId: string, serviceUUID: string, characteristicUUID: string): Promise<number[]>;
+    startNotification(
       peripheralId: string,
       serviceUUID: string,
       characteristicUUID: string,
-      data: number[],
     ): Promise<void>;
-    read(peripheralId: string, serviceUUID: string, characteristicUUID: string): Promise<number[]>;
+    stopNotification(
+      peripheralId: string,
+      serviceUUID: string,
+      characteristicUUID: string,
+    ): Promise<void>;
     getBleState(): Promise<string>;
     getPeripheralsWithIdentifiers(identifiers: string[]): Promise<Peripheral[]>;
     getConnectedPeripherals(serviceUUIDs: string[]): Promise<Peripheral[]>;
     getDiscoveredPeripherals(): Promise<Peripheral[]>;
     isPeripheralConnected(peripheralId: string, serviceUUIDs: string[]): Promise<boolean>;
-    writeWithoutResponse(
-      peripheralId: string,
-      serviceUUID: string,
-      characteristicUUID: string,
-      data: number[],
-    ): Promise<void>;
   }
 
   const BleManager: BleManagerModule;

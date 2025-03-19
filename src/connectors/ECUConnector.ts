@@ -149,12 +149,51 @@ export class BluetoothECUConnector implements IECUConnector {
     }
 
     try {
-      // Check if already connected
-      const isConnected = await BleManager.isPeripheralConnected(this.deviceId, []);
+      // Check if already connected - pass an array with the service UUID
+      const isConnected = await BleManager.isPeripheralConnected(this.deviceId, [this.serviceUUID]);
 
       if (!isConnected) {
         await BleManager.connect(this.deviceId);
         await new Promise(resolve => setTimeout(resolve, 500)); // Short delay after connection
+
+        // After connecting, retrieve services to ensure they're properly discovered
+        await BleManager.retrieveServices(this.deviceId);
+      }
+
+      // Ensure the service and characteristic exist before starting notification
+      const services = await BleManager.retrieveServices(this.deviceId);
+
+      // Check if the service and characteristic exist
+      const serviceExists = services.services?.some(service => service.uuid === this.serviceUUID);
+      if (!serviceExists) {
+        throw new BluetoothOBDError(
+          BluetoothErrorType.SERVICE_ERROR,
+          `Service ${this.serviceUUID} not found on device ${this.deviceId}`,
+        );
+      }
+
+      // Get characteristics to verify
+      const characteristics = await BleManager.retrieveCharacteristics(
+        this.deviceId,
+        this.serviceUUID,
+      );
+      const notifyCharExists = characteristics.some(
+        char => char.uuid === this.notifyCharacteristic,
+      );
+      const writeCharExists = characteristics.some(char => char.uuid === this.writeCharacteristic);
+
+      if (!notifyCharExists) {
+        throw new BluetoothOBDError(
+          BluetoothErrorType.CHARACTERISTIC_ERROR,
+          `Notification characteristic ${this.notifyCharacteristic} not found in service ${this.serviceUUID}`,
+        );
+      }
+
+      if (!writeCharExists) {
+        throw new BluetoothOBDError(
+          BluetoothErrorType.CHARACTERISTIC_ERROR,
+          `Write characteristic ${this.writeCharacteristic} not found in service ${this.serviceUUID}`,
+        );
       }
 
       // Start notification on the characteristic
@@ -200,7 +239,8 @@ export class BluetoothECUConnector implements IECUConnector {
           this.notifyCharacteristic,
         );
       } catch (e) {
-        // Ignore errors in stopping notification
+        // Ignore errors in stopping notification but log them
+        console.warn('Error stopping notification:', e);
       }
 
       // Disconnect
@@ -229,6 +269,17 @@ export class BluetoothECUConnector implements IECUConnector {
     const bytes = encodeCommand(cmdWithCR);
 
     try {
+      // Verify connection status before sending command
+      const isStillConnected = await BleManager.isPeripheralConnected(this.deviceId, [
+        this.serviceUUID,
+      ]);
+      if (!isStillConnected) {
+        throw new BluetoothOBDError(
+          BluetoothErrorType.CONNECTION_ERROR,
+          'Device disconnected while attempting to send command',
+        );
+      }
+
       // Send command
       if (this.writeWithResponse) {
         await BleManager.write(this.deviceId, this.serviceUUID, this.writeCharacteristic, bytes);
@@ -275,16 +326,32 @@ export class BluetoothECUConnector implements IECUConnector {
    * Process incoming notification data
    */
   public handleNotification(data: Uint8Array): void {
-    const value = decodeData(data);
-    this.responseBuffer += value;
+    try {
+      const value = decodeData(data);
+      this.responseBuffer += value;
 
-    // Check if response is complete
-    if (isResponseComplete(this.responseBuffer) && this.responseResolver) {
-      this.clearTimeout();
-      this.responseResolver(this.responseBuffer);
-      this.responseBuffer = '';
-      this.responseResolver = null;
-      this.responseRejector = null;
+      // Check if response is complete
+      if (isResponseComplete(this.responseBuffer) && this.responseResolver) {
+        this.clearTimeout();
+        this.responseResolver(this.responseBuffer);
+        this.responseBuffer = '';
+        this.responseResolver = null;
+        this.responseRejector = null;
+      }
+    } catch (error) {
+      // Handle any errors in notification processing
+      if (this.responseRejector) {
+        this.responseRejector(
+          new BluetoothOBDError(
+            BluetoothErrorType.DATA_ERROR,
+            `Failed to process notification data: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            error,
+          ),
+        );
+      }
+      this.clearResponse();
     }
   }
 
