@@ -1,8 +1,8 @@
 import BleManager from 'react-native-ble-manager';
-import { BluetoothContext } from '../context/BluetoothContext';
+
 import { BluetoothContextValue } from '../types/bluetoothTypes';
-import { decodeData, encodeCommand, formatResponse, isResponseComplete } from '../utils/dataUtils';
 import { BluetoothErrorType, BluetoothOBDError } from '../utils/errorUtils';
+import { decodeData, encodeCommand, formatResponse, isResponseComplete } from '../utils/dataUtils';
 
 /**
  * Interface for any ECU connector implementation
@@ -11,29 +11,23 @@ export interface IECUConnector {
   sendCommand(command: string, timeoutMs?: number): Promise<string>;
   disconnect(): Promise<void>;
   isConnected(): boolean;
+  getDeviceId(): string | null;
 }
 
 /**
  * ECU Connector class for interacting with OBD devices
  */
-export class ECUConnector {
-  private context: BluetoothContextValue | null = null;
+export class ECUConnector implements IECUConnector {
   private deviceId: string | null = null;
+  private context: BluetoothContextValue;
   private responseTimeout = 4000; // Default timeout in ms
   private isInitialized = false;
-  
-  constructor() {
-    // Default constructor for tests
-  }
-  
-  /**
-   * Set Bluetooth context to use for communication
-   */
-  setContext(context: BluetoothContextValue): void {
+
+  constructor(context: BluetoothContextValue) {
     this.context = context;
     this.isInitialized = true;
   }
-  
+
   /**
    * Set connected device ID
    */
@@ -41,84 +35,76 @@ export class ECUConnector {
     this.deviceId = deviceId;
     this.isInitialized = true;
   }
-  
+
   /**
    * Check if the connector is connected to a device
    */
   isConnected(): boolean {
-    // Device must be explicitly set and not null
-    return Boolean(this.context && this.deviceId);
+    return this.deviceId !== null && this.context.isConnected;
   }
-  
+
   /**
    * Send a command to the OBD device
    * @param command Command to send
-   * @param timeout Optional timeout in milliseconds
+   * @param timeoutMs Optional timeout in milliseconds
    */
-  async sendCommand(command: string, timeout?: number): Promise<string> {
-    if (!this.context || !this.deviceId) {
-      throw new BluetoothOBDError(
-        BluetoothErrorType.CONNECTION_ERROR,
-        'Not connected to ECU'
-      );
+  async sendCommand(command: string, timeoutMs = 5000): Promise<string> {
+    if (!this.isConnected()) {
+      throw new BluetoothOBDError(BluetoothErrorType.CONNECTION_ERROR, 'Device is not connected');
     }
-    
+
     try {
-      // Don't add a default timeout, let it be undefined if not provided
-      const response = await this.context.sendCommand(command, timeout);
-      return response;
+      // Encode command (not used directly but helpful for debugging)
+      encodeCommand(command);
+      const response = await this.context.sendCommand(command, timeoutMs);
+      return formatResponse(response, command);
     } catch (error) {
-      if (error instanceof BluetoothOBDError) {
-        throw error;
-      }
       throw new BluetoothOBDError(
         BluetoothErrorType.WRITE_ERROR,
-        error instanceof Error ? error.message : String(error)
+        `Failed to send command: ${error instanceof Error ? error.message : String(error)}`,
+        error,
       );
     }
   }
-  
+
   /**
    * Disconnect from the device
    */
   async disconnect(): Promise<void> {
-    if (!this.isInitialized || !this.deviceId) {
-      return;
-    }
-    
-    try {
-      if (this.context?.disconnect) {
+    if (this.deviceId) {
+      try {
         await this.context.disconnect(this.deviceId);
+        this.deviceId = null;
+      } catch (error) {
+        throw new BluetoothOBDError(
+          BluetoothErrorType.DISCONNECTION_ERROR,
+          `Failed to disconnect: ${error instanceof Error ? error.message : String(error)}`,
+          error,
+        );
       }
-      this.deviceId = null;
-      this.isInitialized = false;
-    } catch (error) {
-      throw new BluetoothOBDError(
-        BluetoothErrorType.DISCONNECTION_ERROR,
-        `Failed to disconnect: ${error instanceof Error ? error.message : String(error)}`
-      );
     }
   }
-  
+
   /**
    * Reset the device (send ATZ command)
    */
   async reset(): Promise<string> {
     if (!this.isInitialized) {
-      throw new BluetoothOBDError(
-        BluetoothErrorType.CONNECTION_ERROR,
-        'Not initialized'
-      );
+      throw new BluetoothOBDError(BluetoothErrorType.CONNECTION_ERROR, 'Not initialized');
     }
     // Pass default timeout for reset command
     return this.sendCommand('ATZ', this.responseTimeout);
   }
-  
+
   /**
    * Set response timeout
    */
   setResponseTimeout(timeout: number): void {
     this.responseTimeout = timeout;
+  }
+
+  public getDeviceId(): string | null {
+    return this.deviceId;
   }
 }
 
@@ -139,13 +125,13 @@ export class BluetoothECUConnector implements IECUConnector {
   private responsePromise: Promise<string> | null = null;
   private responseResolver: ((value: string) => void) | null = null;
   private responseRejector: ((reason: Error) => void) | null = null;
-  
+
   constructor(
     deviceId: string,
     serviceUUID: string,
     writeCharacteristic: string,
     notifyCharacteristic: string,
-    writeWithResponse = true
+    writeWithResponse = true,
   ) {
     this.deviceId = deviceId;
     this.serviceUUID = serviceUUID;
@@ -153,7 +139,7 @@ export class BluetoothECUConnector implements IECUConnector {
     this.notifyCharacteristic = notifyCharacteristic;
     this.writeWithResponse = writeWithResponse;
   }
-  
+
   /**
    * Connect to the device and start notification
    */
@@ -161,57 +147,62 @@ export class BluetoothECUConnector implements IECUConnector {
     if (this.isConnectedFlag) {
       return true;
     }
-    
+
     try {
       // Check if already connected
       const isConnected = await BleManager.isPeripheralConnected(this.deviceId, []);
-      
+
       if (!isConnected) {
         await BleManager.connect(this.deviceId);
         await new Promise(resolve => setTimeout(resolve, 500)); // Short delay after connection
       }
-      
+
       // Start notification on the characteristic
       await BleManager.startNotification(
         this.deviceId,
         this.serviceUUID,
-        this.notifyCharacteristic
+        this.notifyCharacteristic,
       );
-      
+
       this.isConnectedFlag = true;
       return true;
     } catch (error) {
       throw new BluetoothOBDError(
         BluetoothErrorType.CONNECTION_ERROR,
         `Failed to connect to ECU: ${error instanceof Error ? error.message : String(error)}`,
-        error
+        error,
       );
     }
   }
-  
-  /**
-   * Disconnect from the device
-   */
+
+  public getDeviceId(): string {
+    return this.deviceId;
+  }
+
+  public isConnected(): boolean {
+    return this.isConnectedFlag;
+  }
+
   public async disconnect(): Promise<void> {
     if (!this.isConnectedFlag) {
       return;
     }
-    
+
     try {
       // Clean up any pending response
       this.clearResponse();
-      
+
       // Stop notification
       try {
         await BleManager.stopNotification(
           this.deviceId,
           this.serviceUUID,
-          this.notifyCharacteristic
+          this.notifyCharacteristic,
         );
       } catch (e) {
         // Ignore errors in stopping notification
       }
-      
+
       // Disconnect
       await BleManager.disconnect(this.deviceId);
       this.isConnectedFlag = false;
@@ -219,61 +210,47 @@ export class BluetoothECUConnector implements IECUConnector {
       throw new BluetoothOBDError(
         BluetoothErrorType.DISCONNECTION_ERROR,
         `Error disconnecting from ECU: ${error instanceof Error ? error.message : String(error)}`,
-        error
+        error,
       );
     }
   }
-  
-  /**
-   * Send a command to the OBD device and wait for response
-   * @param command Command to send
-   * @param timeoutMs Optional timeout in ms
-   * @returns Formatted response string
-   */
+
   public async sendCommand(command: string, timeoutMs = 5000): Promise<string> {
     if (!this.isConnectedFlag) {
-      throw new BluetoothOBDError(
-        BluetoothErrorType.CONNECTION_ERROR,
-        'Not connected to ECU'
-      );
+      throw new BluetoothOBDError(BluetoothErrorType.CONNECTION_ERROR, 'Not connected to ECU');
     }
-    
+
     // Prepare for the response
     this.clearResponse();
     this.setupResponsePromise();
-    
+
     // Add carriage return if needed
     const cmdWithCR = command.endsWith('\r') ? command : `${command}\r`;
     const bytes = encodeCommand(cmdWithCR);
-    
+
     try {
       // Send command
       if (this.writeWithResponse) {
-        await BleManager.write(
-          this.deviceId,
-          this.serviceUUID,
-          this.writeCharacteristic,
-          bytes
-        );
+        await BleManager.write(this.deviceId, this.serviceUUID, this.writeCharacteristic, bytes);
       } else {
         await BleManager.writeWithoutResponse(
           this.deviceId,
           this.serviceUUID,
           this.writeCharacteristic,
-          bytes
+          bytes,
         );
       }
-      
+
       // Set timeout
       this.timeoutId = setTimeout(() => {
         this.handleTimeout();
       }, timeoutMs);
-      
+
       // Wait for response
       if (!this.responsePromise) {
         throw new BluetoothOBDError(
           BluetoothErrorType.WRITE_ERROR,
-          'Response promise not initialized'
+          'Response promise not initialized',
         );
       }
       const response = await this.responsePromise;
@@ -284,21 +261,23 @@ export class BluetoothECUConnector implements IECUConnector {
       }
       throw new BluetoothOBDError(
         BluetoothErrorType.WRITE_ERROR,
-        `Failed to send command ${command}: ${error instanceof Error ? error.message : String(error)}`,
-        error
+        `Failed to send command ${command}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error,
       );
     } finally {
       this.clearResponse();
     }
   }
-  
+
   /**
    * Process incoming notification data
    */
   public handleNotification(data: Uint8Array): void {
     const value = decodeData(data);
     this.responseBuffer += value;
-    
+
     // Check if response is complete
     if (isResponseComplete(this.responseBuffer) && this.responseResolver) {
       this.clearTimeout();
@@ -308,29 +287,19 @@ export class BluetoothECUConnector implements IECUConnector {
       this.responseRejector = null;
     }
   }
-  
-  /**
-   * Check connection status
-   */
-  public isConnected(): boolean {
-    return this.isConnectedFlag;
-  }
-  
+
   /**
    * Handle timeout of command
    */
   private handleTimeout(): void {
     if (this.responseRejector) {
       this.responseRejector(
-        new BluetoothOBDError(
-          BluetoothErrorType.TIMEOUT_ERROR,
-          'Command timed out'
-        )
+        new BluetoothOBDError(BluetoothErrorType.TIMEOUT_ERROR, 'Command timed out'),
       );
     }
     this.clearResponse();
   }
-  
+
   /**
    * Set up a new promise for a response
    */
@@ -340,7 +309,7 @@ export class BluetoothECUConnector implements IECUConnector {
       this.responseRejector = reject;
     });
   }
-  
+
   /**
    * Clear response state
    */
@@ -350,7 +319,7 @@ export class BluetoothECUConnector implements IECUConnector {
     this.responseResolver = null;
     this.responseRejector = null;
   }
-  
+
   /**
    * Clear timeout if set
    */
@@ -370,13 +339,13 @@ export function createECUConnector(
   serviceUUID: string,
   writeCharacteristic: string,
   notifyCharacteristic: string,
-  writeWithResponse = true
+  writeWithResponse = true,
 ): IECUConnector {
   return new BluetoothECUConnector(
     deviceId,
     serviceUUID,
     writeCharacteristic,
     notifyCharacteristic,
-    writeWithResponse
+    writeWithResponse,
   );
 }

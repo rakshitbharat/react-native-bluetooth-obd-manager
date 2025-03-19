@@ -4,18 +4,24 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BluetoothDeviceInfo, ConnectionDetails, ScanOptions } from '../types/bluetoothTypes';
 import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
 
-const BleManagerModule = NativeModules.BleManager;
-const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
+// BLE Manager emitter for event handling
+const bleManagerModule = NativeModules.BleManager;
+const bleManagerEmitter = new NativeEventEmitter(bleManagerModule);
 
-// Storage keys
-const STORAGE_KEYS = {
-  LAST_DEVICE: '@OBDManager:lastDevice',
-  KNOWN_DEVICES: '@OBDManager:knownDevices',
+// Default device manager configuration
+const DEFAULT_CONFIG = {
+  scanTimeout: 10000,
+  connectionTimeout: 10000,
+  autoConnect: true,
+  showPowerAlert: true,
 };
 
-// Maximum number of known devices to remember
-const MAX_KNOWN_DEVICES = 10;
+// Storage key for known devices
+const STORAGE_KEY_KNOWN_DEVICES = '@DeviceManager:knownDevices';
 
+/**
+ * Known device record for storage
+ */
 interface KnownDevice {
   id: string;
   name: string;
@@ -23,6 +29,9 @@ interface KnownDevice {
   isOBDDevice: boolean;
 }
 
+/**
+ * Device Manager configuration options
+ */
 export interface DeviceManagerConfig {
   scanTimeout?: number;
   connectionTimeout?: number;
@@ -30,15 +39,11 @@ export interface DeviceManagerConfig {
   showPowerAlert?: boolean;
 }
 
-const DEFAULT_CONFIG: DeviceManagerConfig = {
-  scanTimeout: 10000,
-  connectionTimeout: 5000,
-  autoConnect: false,
-  showPowerAlert: true
-};
-
 /**
- * Manager for handling Bluetooth device history and preferences
+ * Device Manager handles Bluetooth device discovery,
+ * connection, and management. It's implemented as a
+ * singleton to ensure a single consistent source of
+ * device management.
  */
 export class DeviceManager {
   private static instance: DeviceManager;
@@ -51,20 +56,26 @@ export class DeviceManager {
   private disconnectListener?: ReturnType<typeof bleManagerEmitter.addListener>;
 
   private constructor(config: DeviceManagerConfig = DEFAULT_CONFIG) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.config = {
+      ...DEFAULT_CONFIG,
+      ...config,
+    };
+    this.loadFromStorage().catch(e => console.error('Failed to load device storage:', e));
   }
 
   /**
-   * Get the singleton instance
+   * Get the singleton instance of DeviceManager
    */
   public static getInstance(config?: DeviceManagerConfig): DeviceManager {
     if (!DeviceManager.instance) {
       DeviceManager.instance = new DeviceManager(config);
-      DeviceManager.instance.loadFromStorage();
     }
     return DeviceManager.instance;
   }
 
+  /**
+   * Initialize Bluetooth functionality
+   */
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
@@ -75,86 +86,115 @@ export class DeviceManager {
     } catch (error) {
       throw new BluetoothOBDError(
         BluetoothErrorType.INITIALIZATION_ERROR,
-        `Failed to initialize BLE Manager: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to initialize Bluetooth: ${error instanceof Error ? error.message : String(error)}`,
+        error,
       );
     }
   }
 
+  /**
+   * Setup event listeners for Bluetooth events
+   */
   private setupEventListeners(): void {
-    // Scan event listener
+    // Clear any existing listeners
+    if (this.scanListener) this.scanListener.remove();
+    if (this.connectListener) this.connectListener.remove();
+    if (this.disconnectListener) this.disconnectListener.remove();
+
+    // Set up new listeners
     this.scanListener = bleManagerEmitter.addListener(
       'BleManagerDiscoverPeripheral',
-      this.handleDiscoverPeripheral.bind(this)
+      this.handleDiscoverPeripheral.bind(this),
     );
 
-    // Connection event listeners
     this.connectListener = bleManagerEmitter.addListener(
       'BleManagerConnectPeripheral',
-      this.handleConnectPeripheral.bind(this)
+      this.handleConnectPeripheral.bind(this),
     );
 
     this.disconnectListener = bleManagerEmitter.addListener(
       'BleManagerDisconnectPeripheral',
-      this.handleDisconnectPeripheral.bind(this)
+      this.handleDisconnectPeripheral.bind(this),
     );
   }
 
+  /**
+   * Handle discovered peripheral
+   */
   private handleDiscoverPeripheral(peripheral: Peripheral): void {
-    // Handle discovered peripheral
-    // This method can be extended based on requirements
+    // Handle peripheral discovery (can be implemented as needed)
+    console.log('Discovered peripheral:', peripheral.id, peripheral.name);
   }
 
+  /**
+   * Handle peripheral connect event
+   */
   private handleConnectPeripheral(peripheral: { peripheral: string }): void {
-    // Handle connected peripheral
-    // This method can be extended based on requirements
+    // Handle peripheral connected
+    console.log('Connected to peripheral:', peripheral.peripheral);
   }
 
+  /**
+   * Handle peripheral disconnect event
+   */
   private handleDisconnectPeripheral(peripheral: { peripheral: string }): void {
-    // Handle disconnected peripheral
-    // This method can be extended based on requirements
+    // Handle peripheral disconnected
+    console.log('Disconnected from peripheral:', peripheral.peripheral);
   }
 
+  /**
+   * Start scanning for Bluetooth devices
+   */
   async startScan(options?: ScanOptions): Promise<void> {
     if (!this.initialized) {
-      throw new BluetoothOBDError(
-        BluetoothErrorType.INITIALIZATION_ERROR,
-        'Device manager not initialized'
-      );
+      await this.initialize();
     }
+
     try {
-      // Ensure we always pass a number for the duration parameter
-      const duration = options?.duration || this.config.scanTimeout || DEFAULT_CONFIG.scanTimeout || 10000;
-      await BleManager.scan([], 
-        duration,
-        options?.allowDuplicates ?? false
-      );
+      // Stop any ongoing scan
+      await this.stopScan();
+
+      // Default scan options
+      const scanOptions = {
+        duration: options?.duration || this.config.scanTimeout || 10000,
+        allowDuplicates: options?.allowDuplicates || false,
+      };
+
+      // Start scan with empty UUID array (scan for all devices)
+      await BleManager.scan([], scanOptions.duration / 1000, scanOptions.allowDuplicates);
+
+      // Auto-stop after duration
+      setTimeout(() => {
+        this.stopScan().catch(e => console.error('Error stopping scan:', e));
+      }, scanOptions.duration);
     } catch (error) {
       throw new BluetoothOBDError(
         BluetoothErrorType.SCAN_ERROR,
-        `Failed to start scan: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to start scan: ${error instanceof Error ? error.message : String(error)}`,
+        error,
       );
     }
   }
 
+  /**
+   * Stop scanning for Bluetooth devices
+   */
   async stopScan(): Promise<void> {
     try {
       await BleManager.stopScan();
     } catch (error) {
       throw new BluetoothOBDError(
         BluetoothErrorType.SCAN_ERROR,
-        `Failed to stop scan: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to stop scan: ${error instanceof Error ? error.message : String(error)}`,
+        error,
       );
     }
   }
 
+  /**
+   * Connect to a Bluetooth device and retrieve its details
+   */
   async connectToDevice(deviceId: string): Promise<ConnectionDetails> {
-    if (!deviceId) {
-      throw new BluetoothOBDError(
-        BluetoothErrorType.INVALID_PARAMETER,
-        'Device ID is required'
-      );
-    }
-
     try {
       await BleManager.connect(deviceId);
       const peripheral = await BleManager.retrieveServices(deviceId);
@@ -162,33 +202,33 @@ export class DeviceManager {
       if (!peripheral.services?.length) {
         throw new BluetoothOBDError(
           BluetoothErrorType.SERVICE_ERROR,
-          'No services found on device'
+          'No services found on device',
         );
       }
 
       // Find the first available service and characteristic for writing
       const service = peripheral.services[0];
-      const characteristics = await BleManager.retrieveCharacteristics(
-        deviceId,
-        service.uuid
-      );
+      const characteristics = await BleManager.retrieveCharacteristics(deviceId, service.uuid);
 
       const writableCharacteristic = characteristics.find(
-        (c: Characteristic) => c.properties.Write || c.properties.WriteWithoutResponse
+        (c: Characteristic) => c.properties.Write || c.properties.WriteWithoutResponse,
       );
 
       if (!writableCharacteristic) {
         throw new BluetoothOBDError(
           BluetoothErrorType.CHARACTERISTIC_ERROR,
-          'No writable characteristic found'
+          'No writable characteristic found',
         );
       }
+
+      // Save as last connected device
+      await this.setLastConnectedDevice(deviceId);
 
       return {
         serviceUUID: service.uuid,
         characteristicUUID: writableCharacteristic.uuid,
         writeWithResponse: writableCharacteristic.properties.Write || false,
-        mtu: undefined // Optional MTU size
+        mtu: undefined, // Optional MTU size
       };
     } catch (error) {
       if (error instanceof BluetoothOBDError) {
@@ -196,148 +236,186 @@ export class DeviceManager {
       }
       throw new BluetoothOBDError(
         BluetoothErrorType.CONNECTION_ERROR,
-        `Failed to connect to device: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to connect to device: ${error instanceof Error ? error.message : String(error)}`,
+        error,
       );
     }
   }
 
+  /**
+   * Disconnect from a Bluetooth device
+   */
   async disconnectDevice(deviceId: string): Promise<void> {
     try {
       await BleManager.disconnect(deviceId);
     } catch (error) {
       throw new BluetoothOBDError(
         BluetoothErrorType.DISCONNECTION_ERROR,
-        `Failed to disconnect device: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to disconnect from device: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error,
       );
     }
   }
 
+  /**
+   * Write data to a Bluetooth characteristic
+   */
   async writeCharacteristic(
     deviceId: string,
     serviceUUID: string,
     characteristicUUID: string,
     value: number[],
-    writeWithResponse: boolean = true
+    writeWithResponse: boolean = true,
   ): Promise<void> {
     try {
-      await BleManager.write(
-        deviceId,
-        serviceUUID,
-        characteristicUUID,
-        value,
-        writeWithResponse ? 1 : 0 // Convert boolean to number as required by BleManager
-      );
+      if (writeWithResponse) {
+        await BleManager.write(deviceId, serviceUUID, characteristicUUID, value);
+      } else {
+        await BleManager.writeWithoutResponse(deviceId, serviceUUID, characteristicUUID, value);
+      }
     } catch (error) {
       throw new BluetoothOBDError(
         BluetoothErrorType.WRITE_ERROR,
-        `Failed to write characteristic: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to write to characteristic: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error,
       );
     }
   }
 
+  /**
+   * Read data from a Bluetooth characteristic
+   */
   async readCharacteristic(
     deviceId: string,
     serviceUUID: string,
-    characteristicUUID: string
+    characteristicUUID: string,
   ): Promise<number[]> {
     try {
       return await BleManager.read(deviceId, serviceUUID, characteristicUUID);
     } catch (error) {
       throw new BluetoothOBDError(
         BluetoothErrorType.READ_ERROR,
-        `Failed to read characteristic: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to read from characteristic: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error,
       );
     }
   }
 
+  /**
+   * Start notifications for a Bluetooth characteristic
+   */
   async startNotifications(
     deviceId: string,
     serviceUUID: string,
-    characteristicUUID: string
+    characteristicUUID: string,
   ): Promise<void> {
     try {
       await BleManager.startNotification(deviceId, serviceUUID, characteristicUUID);
     } catch (error) {
       throw new BluetoothOBDError(
         BluetoothErrorType.NOTIFICATION_ERROR,
-        `Failed to start notifications: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to start notifications: ${error instanceof Error ? error.message : String(error)}`,
+        error,
       );
     }
   }
 
+  /**
+   * Stop notifications for a Bluetooth characteristic
+   */
   async stopNotifications(
     deviceId: string,
     serviceUUID: string,
-    characteristicUUID: string
+    characteristicUUID: string,
   ): Promise<void> {
     try {
       await BleManager.stopNotification(deviceId, serviceUUID, characteristicUUID);
     } catch (error) {
       throw new BluetoothOBDError(
         BluetoothErrorType.NOTIFICATION_ERROR,
-        `Failed to stop notifications: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to stop notifications: ${error instanceof Error ? error.message : String(error)}`,
+        error,
       );
     }
   }
 
+  /**
+   * Destroy manager instance and clean up resources
+   */
   destroy(): void {
-    this.scanListener?.remove();
-    this.connectListener?.remove();
-    this.disconnectListener?.remove();
+    if (this.scanListener) this.scanListener.remove();
+    if (this.connectListener) this.connectListener.remove();
+    if (this.disconnectListener) this.disconnectListener.remove();
     this.initialized = false;
+
+    // Reset the singleton instance
+    DeviceManager.instance = undefined as any;
   }
 
   /**
-   * Load saved devices from persistent storage
+   * Load known devices from storage
    */
   private async loadFromStorage(): Promise<void> {
     try {
-      // Load last connected device
-      const lastDeviceId = await AsyncStorage.getItem(STORAGE_KEYS.LAST_DEVICE);
-      if (lastDeviceId) {
-        this.lastConnectedDevice = lastDeviceId;
-      }
+      const storedData = await AsyncStorage.getItem(STORAGE_KEY_KNOWN_DEVICES);
+      if (storedData) {
+        const parsedData = JSON.parse(storedData);
 
-      // Load known devices
-      const knownDevicesJson = await AsyncStorage.getItem(STORAGE_KEYS.KNOWN_DEVICES);
-      if (knownDevicesJson) {
-        this.knownDevices = JSON.parse(knownDevicesJson);
+        if (Array.isArray(parsedData.devices)) {
+          this.knownDevices = parsedData.devices;
+        }
+
+        if (typeof parsedData.lastConnected === 'string') {
+          this.lastConnectedDevice = parsedData.lastConnected;
+        }
       }
     } catch (error) {
-      console.error('Failed to load device data from storage:', error);
+      console.error('Error loading device data from storage:', error);
+      // Initialize with empty data on error
+      this.knownDevices = [];
+      this.lastConnectedDevice = null;
     }
   }
 
   /**
-   * Save current device data to persistent storage
+   * Save known devices to storage
    */
   private async saveToStorage(): Promise<void> {
     try {
-      // Save last connected device
-      if (this.lastConnectedDevice) {
-        await AsyncStorage.setItem(STORAGE_KEYS.LAST_DEVICE, this.lastConnectedDevice);
-      } else {
-        await AsyncStorage.removeItem(STORAGE_KEYS.LAST_DEVICE);
-      }
+      const dataToStore = {
+        devices: this.knownDevices,
+        lastConnected: this.lastConnectedDevice,
+      };
 
-      // Save known devices
-      await AsyncStorage.setItem(STORAGE_KEYS.KNOWN_DEVICES, JSON.stringify(this.knownDevices));
+      await AsyncStorage.setItem(STORAGE_KEY_KNOWN_DEVICES, JSON.stringify(dataToStore));
     } catch (error) {
-      console.error('Failed to save device data to storage:', error);
+      console.error('Error saving device data to storage:', error);
     }
   }
 
   /**
-   * Remember a device that has been connected to
+   * Remember a device for future connections
    */
   public async rememberDevice(device: Peripheral, isOBDDevice = true): Promise<void> {
+    // Don't remember devices without IDs
+    if (!device.id) return;
+
+    const deviceName = device.name || `Device ${device.id.substring(0, 6)}`;
+
+    // Check if device already exists in known devices
     const existingIndex = this.knownDevices.findIndex(d => d.id === device.id);
 
     if (existingIndex >= 0) {
       // Update existing device
       this.knownDevices[existingIndex] = {
-        id: device.id,
-        name: device.name || 'Unknown Device',
+        ...this.knownDevices[existingIndex],
+        name: deviceName, // Update name in case it changed
         lastConnected: Date.now(),
         isOBDDevice,
       };
@@ -345,21 +423,16 @@ export class DeviceManager {
       // Add new device
       this.knownDevices.push({
         id: device.id,
-        name: device.name || 'Unknown Device',
+        name: deviceName,
         lastConnected: Date.now(),
         isOBDDevice,
       });
-
-      // Maintain maximum list size
-      if (this.knownDevices.length > MAX_KNOWN_DEVICES) {
-        // Sort by last connected time (newest first)
-        this.knownDevices.sort((a, b) => b.lastConnected - a.lastConnected);
-        // Keep only the most recent MAX_KNOWN_DEVICES
-        this.knownDevices = this.knownDevices.slice(0, MAX_KNOWN_DEVICES);
-      }
     }
 
-    // Save to storage
+    // Sort by most recently connected
+    this.knownDevices.sort((a, b) => b.lastConnected - a.lastConnected);
+
+    // Save changes
     await this.saveToStorage();
   }
 
@@ -416,18 +489,17 @@ export class DeviceManager {
   }
 
   /**
-   * Check if a device is known
+   * Check if a device is in the known devices list
    */
   public isKnownDevice(deviceId: string): boolean {
     return this.knownDevices.some(device => device.id === deviceId);
   }
 
   /**
-   * Get device info by ID
+   * Get a known device by ID
    */
   public getDeviceById(deviceId: string): KnownDevice | null {
-    const device = this.knownDevices.find(d => d.id === deviceId);
-    return device || null;
+    return this.knownDevices.find(device => device.id === deviceId) || null;
   }
 }
 

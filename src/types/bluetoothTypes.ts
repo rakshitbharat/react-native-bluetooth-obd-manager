@@ -21,20 +21,18 @@ export interface ConnectionDetails {
 }
 
 export interface BluetoothState {
+  isInitialized: boolean;
+  isBluetoothOn: boolean;
+  hasPermissions: boolean;
   isScanning: boolean;
   isConnected: boolean;
+  isStreaming: boolean;
   devices: BluetoothDeviceInfo[];
-  error: BluetoothOBDError | null;
+  discoveredDevices: BluetoothDeviceInfo[];
+  connectedDevice: BluetoothDeviceInfo | null;
   connectionDetails: ConnectionDetails | null;
-  
-  // Add missing properties found in the codebase
-  isInitialized?: boolean;
-  isBluetoothOn?: boolean;
-  hasPermissions?: boolean;
-  connectedDevice?: BluetoothDeviceInfo;
-  discoveredDevices?: BluetoothDeviceInfo[];
-  isStreaming?: boolean;
-  pendingCommand?: string;
+  error: BluetoothOBDError | null;
+  pendingCommand: string | null;
 }
 
 export type TransportType = 'classic' | 'ble' | 'auto';

@@ -47,7 +47,9 @@ export const useDeviceDetection = () => {
 
     // If we have an auto-connect device, try to find it
     if (autoConnectDevice && !selectedDevice) {
-      const deviceToConnect = filteredDevices.find((d: BluetoothDeviceInfo) => d.id === autoConnectDevice);
+      const deviceToConnect = filteredDevices.find(
+        (d: BluetoothDeviceInfo) => d.id === autoConnectDevice,
+      );
       if (deviceToConnect) {
         setSelectedDevice(deviceToConnect);
       }

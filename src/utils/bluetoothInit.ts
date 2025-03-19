@@ -8,28 +8,41 @@ import type { BluetoothState } from '../types/bluetoothTypes';
 const BleManagerModule = NativeModules.BleManager;
 const bleEmitter = new NativeEventEmitter(BleManagerModule);
 
+interface BleStateChangeEvent {
+  state: 'on' | 'off';
+}
+
+interface BleDisconnectEvent {
+  peripheral: string;
+}
+
+interface BleDataEvent {
+  peripheral: string;
+  value: number[];
+}
+
 // Initialize Bluetooth functionality
 export const initializeBluetooth = async (): Promise<BluetoothState> => {
   try {
     await BleManager.start({ showAlert: false });
     return {
       isInitialized: true,
-      isBluetoothOn: false, // Will be updated by state check
-      hasPermissions: false, // Will be updated by permission check
+      isBluetoothOn: false,
+      hasPermissions: false,
       isScanning: false,
       isConnected: false,
+      isStreaming: false,
+      devices: [],
       discoveredDevices: [],
-      connectedDevice: undefined, // Changed from null to undefined
+      connectedDevice: null,
       connectionDetails: null,
       error: null,
-      isStreaming: false,
-      pendingCommand: undefined, // Changed from null to undefined
-      devices: [] // Required property in BluetoothState
+      pendingCommand: null,
     };
   } catch (error) {
     throw new BluetoothOBDError(
       BluetoothErrorType.INITIALIZATION_ERROR,
-      `Failed to initialize Bluetooth: ${error instanceof Error ? error.message : String(error)}`
+      `Failed to initialize Bluetooth: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 };
@@ -38,21 +51,21 @@ export const initializeBluetooth = async (): Promise<BluetoothState> => {
 export const setupEventHandlers = (handlers: {
   onStateChange?: (state: boolean) => void;
   onDeviceDisconnect?: (deviceId: string) => void;
-  onData?: (data: { peripheral: string; value: number[] }) => void;
+  onData?: (data: BleDataEvent) => void;
 }) => {
   const { onStateChange, onDeviceDisconnect, onData } = handlers;
 
   // State change handler
   const stateChangeListener = onStateChange
-    ? bleEmitter.addListener('BleManagerDidUpdateState', ({ state }) => {
-        onStateChange(state === 'on');
+    ? bleEmitter.addListener('BleManagerDidUpdateState', (event: BleStateChangeEvent) => {
+        onStateChange(event.state === 'on');
       })
     : null;
 
   // Disconnect handler
   const disconnectListener = onDeviceDisconnect
-    ? bleEmitter.addListener('BleManagerDisconnectPeripheral', ({ peripheral }) => {
-        onDeviceDisconnect(peripheral);
+    ? bleEmitter.addListener('BleManagerDisconnectPeripheral', (event: BleDisconnectEvent) => {
+        onDeviceDisconnect(event.peripheral);
       })
     : null;
 
@@ -72,7 +85,7 @@ export const setupEventHandlers = (handlers: {
 // Helper function to handle device discovery
 export const handleDeviceDiscovery = (
   device: { name?: string; id: string; rssi?: number },
-  onDeviceFound: (device: { name: string; id: string; rssi?: number }) => void
+  onDeviceFound: (device: { name: string; id: string; rssi?: number }) => void,
 ) => {
   if (device && (device.name || device.id)) {
     onDeviceFound({
