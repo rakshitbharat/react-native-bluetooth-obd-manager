@@ -1,8 +1,11 @@
 import { Observable, Subject } from 'rxjs';
 import { filter, map } from 'rxjs/operators';
+import { NativeEventEmitter, NativeModules } from 'react-native';
+import BleManager from 'react-native-ble-manager';
 
 import { decodeData, isResponseComplete } from './dataUtils';
 import { BluetoothOBDError, BluetoothErrorType } from './errorUtils';
+import streamingManager from './streamingStateManager';
 
 export interface NotificationData {
   peripheral: string;
@@ -11,19 +14,79 @@ export interface NotificationData {
   value: number[];
 }
 
-export interface NotificationOptions {
-  bufferSize?: number;
-  debounceTime?: number;
+export interface RawResponse {
+  bytes: number[];
+  text: string;
 }
 
+/**
+ * Global singleton notification handler for BLE responses
+ */
 export class NotificationHandler {
   private static instance: NotificationHandler;
-  private notificationSubject: Subject<NotificationData>;
+  private notificationSubject = new Subject<NotificationData>();
   private currentPeripheral: string | null = null;
-  private readonly DEFAULT_BUFFER_SIZE = 1024;
+  private responseBuffer = new Map<string, string>();
+  private rawResponseBuffer = new Map<string, number[]>();
+  private notificationListener: any;
 
   private constructor() {
-    this.notificationSubject = new Subject<NotificationData>();
+    // Initialize the global notification listener
+    const bleEmitter = new NativeEventEmitter(NativeModules.BleManager);
+    this.notificationListener = bleEmitter.addListener(
+      'BleManagerDidUpdateValueForCharacteristic',
+      (data: NotificationData) => {
+        if (data.peripheral === this.currentPeripheral) {
+          // Reset streaming timeout since we received data
+          streamingManager.resetStreamTimeout();
+          
+          // Update both raw and decoded buffers for this peripheral
+          let buffer = this.responseBuffer.get(data.peripheral) || '';
+          let rawBuffer = this.rawResponseBuffer.get(data.peripheral) || [];
+          
+          // Append raw bytes
+          rawBuffer = [...rawBuffer, ...data.value];
+          this.rawResponseBuffer.set(data.peripheral, rawBuffer);
+          
+          // Append decoded text
+          const decodedValue = decodeData(data.value);
+          buffer += decodedValue;
+          
+          // If we have a complete response, emit it and clear buffers
+          if (isResponseComplete(buffer)) {
+            this.notificationSubject.next({
+              peripheral: data.peripheral,
+              characteristic: data.characteristic,
+              service: data.service,
+              value: rawBuffer // Send complete raw buffer
+            });
+            this.responseBuffer.delete(data.peripheral);
+            this.rawResponseBuffer.delete(data.peripheral);
+            
+            // Stop streaming since we got a complete response
+            streamingManager.stopStreaming();
+          } else {
+            // Store partial response
+            this.responseBuffer.set(data.peripheral, buffer);
+          }
+        }
+      }
+    );
+
+    // Subscribe to streaming state changes
+    streamingManager.onStreamStateChange((isStreaming) => {
+      if (!isStreaming) {
+        // Clean up buffers when streaming stops
+        this.clearBuffers();
+      }
+    });
+  }
+
+  private clearBuffers(): void {
+    if (this.currentPeripheral) {
+      this.responseBuffer.delete(this.currentPeripheral);
+      this.rawResponseBuffer.delete(this.currentPeripheral);
+    }
   }
 
   static getInstance(): NotificationHandler {
@@ -41,29 +104,15 @@ export class NotificationHandler {
       );
     }
     this.currentPeripheral = peripheralId;
-  }
-
-  handleNotification(data: NotificationData): void {
-    if (!data || !data.peripheral) {
-      throw new BluetoothOBDError(
-        BluetoothErrorType.INVALID_PARAMETER,
-        'Invalid notification data'
-      );
-    }
-
-    if (this.currentPeripheral && data.peripheral === this.currentPeripheral) {
-      try {
-        this.notificationSubject.next(data);
-      } catch (error) {
-        throw new BluetoothOBDError(
-          BluetoothErrorType.NOTIFICATION_ERROR,
-          `Failed to handle notification: ${error instanceof Error ? error.message : String(error)}`
-        );
-      }
+    this.clearBuffers();
+    
+    // Stop any ongoing streaming when changing peripherals
+    if (streamingManager.isStreamingActive()) {
+      streamingManager.stopStreaming();
     }
   }
 
-  getResponseStream(deviceId: string): Observable<string> {
+  getResponseStream(deviceId: string): Observable<RawResponse> {
     if (!deviceId) {
       throw new BluetoothOBDError(
         BluetoothErrorType.INVALID_PARAMETER,
@@ -75,7 +124,10 @@ export class NotificationHandler {
       filter(data => data.peripheral === deviceId),
       map(data => {
         try {
-          return decodeData(data.value);
+          return {
+            bytes: data.value,
+            text: decodeData(data.value)
+          };
         } catch (error) {
           throw new BluetoothOBDError(
             BluetoothErrorType.DATA_ERROR,
@@ -86,11 +138,11 @@ export class NotificationHandler {
     );
   }
 
-  getCompleteResponseStream(deviceId: string): Observable<string> {
+  getCompleteResponseStream(deviceId: string): Observable<RawResponse> {
     return this.getResponseStream(deviceId).pipe(
       filter(response => {
         try {
-          return isResponseComplete(response);
+          return isResponseComplete(response.text);
         } catch (error) {
           throw new BluetoothOBDError(
             BluetoothErrorType.DATA_ERROR,
@@ -101,14 +153,16 @@ export class NotificationHandler {
     );
   }
 
-  reset(): void {
+  cleanup(): void {
+    if (this.notificationListener) {
+      this.notificationListener.remove();
+    }
+    this.clearBuffers();
     this.currentPeripheral = null;
-    // Clear any pending notifications
-    try {
-      this.notificationSubject.complete();
-      this.notificationSubject = new Subject<NotificationData>();
-    } catch (error) {
-      console.warn('Error during notification handler reset:', error);
+    
+    // Stop streaming if active during cleanup
+    if (streamingManager.isStreamingActive()) {
+      streamingManager.stopStreaming();
     }
   }
 }

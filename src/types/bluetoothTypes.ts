@@ -142,3 +142,19 @@ export interface BluetoothContextValue {
   reconnectToLastDevice: () => Promise<boolean>;
   getRecentDevices: () => BluetoothDeviceInfo[];
 }
+
+export interface CommandResponse {
+  text: string;
+  bytes: number[];
+}
+
+export interface BluetoothContextType extends BluetoothState {
+  scanDevices: (timeoutMs?: number) => Promise<boolean>;
+  connectToDevice: (deviceId: string) => Promise<boolean>;
+  disconnect: (deviceId: string) => Promise<boolean>;
+  sendCommand: (command: string, timeoutMs?: number) => Promise<CommandResponse>;
+  requestPermissions: () => Promise<boolean>;
+  isConnected: boolean;
+  getRecentDevices: () => Promise<any[]>;
+  reconnectToLastDevice: () => Promise<boolean>;
+}
