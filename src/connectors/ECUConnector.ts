@@ -3,6 +3,7 @@ import BleManager from 'react-native-ble-manager';
 import { BluetoothContextValue } from '../types/bluetoothTypes';
 import { decodeData, encodeCommand, formatResponse, isResponseComplete } from '../utils/dataUtils';
 import { BluetoothErrorType, BluetoothOBDError } from '../utils/errorUtils';
+import streamingManager from '../utils/streamingStateManager';
 
 /**
  * Interface for any ECU connector implementation
@@ -54,11 +55,21 @@ export class ECUConnector implements IECUConnector {
     }
 
     try {
-      // Encode command (not used directly but helpful for debugging)
+      // Start streaming mode for this command
+      streamingManager.startStreaming();
+      
+      // Encode command and send
       encodeCommand(command);
       const response = await this.context.sendCommand(command, timeoutMs);
+      
+      // Stop streaming since we got a response
+      streamingManager.stopStreaming();
+      
       return formatResponse(response, command);
     } catch (error) {
+      // Stop streaming on error
+      streamingManager.stopStreaming();
+      
       throw new BluetoothOBDError(
         BluetoothErrorType.WRITE_ERROR,
         `Failed to send command: ${error instanceof Error ? error.message : String(error)}`,
