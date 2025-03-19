@@ -12,8 +12,6 @@ export class StreamingStateManager {
   private readonly MAX_STREAM_DURATION = 4000; // 4 seconds
   private streamStateSubject = new Subject<boolean>();
 
-  private constructor() {}
-
   static getInstance(): StreamingStateManager {
     if (!StreamingStateManager.instance) {
       StreamingStateManager.instance = new StreamingStateManager();

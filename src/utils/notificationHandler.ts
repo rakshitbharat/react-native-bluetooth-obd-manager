@@ -1,6 +1,6 @@
+import { NativeEventEmitter, NativeModules } from 'react-native';
 import { Observable, Subject } from 'rxjs';
 import { filter, map } from 'rxjs/operators';
-import { NativeEventEmitter, NativeModules } from 'react-native';
 
 import { decodeData, isResponseComplete } from './dataUtils';
 import { BluetoothOBDError, BluetoothErrorType } from './errorUtils';
