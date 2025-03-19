@@ -182,7 +182,7 @@ export async function checkBluetoothState(): Promise<boolean> {
  * @returns Cleanup function to stop monitoring
  */
 export const monitorBluetoothState = (onStateChange: (isOn: boolean) => void): (() => void) => {
-  let stateChangeListener: EmitterSubscription | null = null;
+  let stateChangeListener: { remove: () => void } | null = null;
 
   try {
     const bleManagerEmitter = new NativeEventEmitter(NativeModules.BleManager);
