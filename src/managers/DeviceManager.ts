@@ -1,7 +1,8 @@
-import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
-import BleManager, { Peripheral, Service, Characteristic } from 'react-native-ble-manager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BluetoothDeviceInfo, ConnectionDetails, ScanOptions } from '../types/bluetoothTypes';
+import { NativeEventEmitter, NativeModules } from 'react-native';
+import BleManager, { Characteristic, Peripheral } from 'react-native-ble-manager';
+
+import { ConnectionDetails, ScanOptions } from '../types/bluetoothTypes';
 import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
 
 // BLE Manager emitter for event handling
@@ -49,7 +50,7 @@ export class DeviceManager {
   private static instance: DeviceManager;
   private knownDevices: KnownDevice[] = [];
   private lastConnectedDevice: string | null = null;
-  private initialized: boolean = false;
+  private initialized = false;
   private config: DeviceManagerConfig;
   private scanListener?: ReturnType<typeof bleManagerEmitter.addListener>;
   private connectListener?: ReturnType<typeof bleManagerEmitter.addListener>;
@@ -267,7 +268,7 @@ export class DeviceManager {
     serviceUUID: string,
     characteristicUUID: string,
     value: number[],
-    writeWithResponse: boolean = true,
+    writeWithResponse = true,
   ): Promise<void> {
     try {
       if (writeWithResponse) {
@@ -355,7 +356,7 @@ export class DeviceManager {
     this.initialized = false;
 
     // Reset the singleton instance
-    DeviceManager.instance = undefined as any;
+    DeviceManager.instance = null as unknown as DeviceManager;
   }
 
   /**

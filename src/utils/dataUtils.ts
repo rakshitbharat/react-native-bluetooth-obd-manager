@@ -1,5 +1,4 @@
 import { Buffer } from 'buffer';
-import { stringToBytes } from 'convert-string';
 
 import { BluetoothOBDError, BluetoothErrorType } from './errorUtils';
 

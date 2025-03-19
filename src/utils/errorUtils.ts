@@ -65,10 +65,10 @@ export const OBD_ERROR_MESSAGES = {
  * @param source Source of the error (optional)
  */
 export const logBluetoothError = (error: unknown, context?: string): void => {
-  let type = "UNKNOWN";
+  let type = 'UNKNOWN';
   let message = '';
-  let details = undefined;
-  
+  let details: unknown = undefined;
+
   if (error instanceof BluetoothOBDError) {
     type = error.type;
     message = error.message;
@@ -80,11 +80,7 @@ export const logBluetoothError = (error: unknown, context?: string): void => {
   }
 
   const contextPrefix = context ? `[${context}] ` : '';
-  console.error(
-    `${contextPrefix}[Bluetooth Error][${type}]:`, 
-    message, 
-    details
-  );
+  console.error(`${contextPrefix}[Bluetooth Error][${type}]:`, message, details);
 };
 
 /**
@@ -94,11 +90,9 @@ export const logBluetoothError = (error: unknown, context?: string): void => {
  */
 export const containsOBDError = (response: string): boolean => {
   if (!response) return false;
-  
+
   const upperResponse = response.toUpperCase();
-  return Object.values(OBD_ERROR_MESSAGES).some(msg => 
-    upperResponse.includes(msg)
-  );
+  return Object.values(OBD_ERROR_MESSAGES).some(msg => upperResponse.includes(msg));
 };
 
 /**
@@ -110,43 +104,43 @@ export const getFriendlyErrorMessage = (error: BluetoothOBDError): string => {
   switch (error.type) {
     case BluetoothErrorType.INITIALIZATION_ERROR:
       return 'Failed to initialize Bluetooth. Please restart the app.';
-    
+
     case BluetoothErrorType.PERMISSION_ERROR:
       return 'Bluetooth permission denied. Please enable Bluetooth permissions in settings.';
-    
+
     case BluetoothErrorType.CONNECTION_ERROR:
-      return 'Failed to connect to the OBD device. Please ensure it\'s powered on and try again.';
-    
+      return "Failed to connect to the OBD device. Please ensure it's powered on and try again.";
+
     case BluetoothErrorType.SERVICE_ERROR:
       return 'Failed to find required Bluetooth services on the device.';
-    
+
     case BluetoothErrorType.CHARACTERISTIC_ERROR:
       return 'Failed to find required Bluetooth characteristics on the device.';
-    
+
     case BluetoothErrorType.NOTIFICATION_ERROR:
       return 'Failed to receive notifications from the OBD device.';
-    
+
     case BluetoothErrorType.WRITE_ERROR:
       return 'Failed to send command to the OBD device.';
-    
+
     case BluetoothErrorType.READ_ERROR:
       return 'Failed to read data from the OBD device.';
-    
+
     case BluetoothErrorType.TIMEOUT_ERROR:
       return 'Command timed out. The OBD device did not respond in time.';
-    
+
     case BluetoothErrorType.PROTOCOL_ERROR:
       return 'OBD protocol error. The device may not support this vehicle or command.';
-    
+
     case BluetoothErrorType.DEVICE_ERROR:
       return 'OBD device error. The device may be malfunctioning.';
-    
+
     case BluetoothErrorType.DISCONNECTION_ERROR:
       return 'The OBD device was disconnected unexpectedly.';
-    
+
     case BluetoothErrorType.COMPATIBILITY_ERROR:
       return 'The OBD device may not be compatible with your vehicle.';
-    
+
     default:
       return error.message || 'An unknown error occurred.';
   }
@@ -160,9 +154,9 @@ export const getFriendlyErrorMessage = (error: BluetoothOBDError): string => {
  * @returns True if the error was handled
  */
 export const handleOBDError = (
-  error: unknown, 
+  error: unknown,
   onRetry?: () => void,
-  onDisconnect?: () => void
+  onDisconnect?: () => void,
 ): boolean => {
   if (!(error instanceof BluetoothOBDError)) {
     return false;
@@ -185,7 +179,7 @@ export const handleOBDError = (
         return true;
       }
       break;
-      
+
     default:
       return false;
   }
@@ -286,7 +280,7 @@ export const parseBluetoothError = (error: unknown): BluetoothOBDError => {
   return new BluetoothOBDError(
     BluetoothErrorType.UNKNOWN_ERROR,
     `Bluetooth error: ${errorMessage}`,
-    error
+    error,
   );
 };
 

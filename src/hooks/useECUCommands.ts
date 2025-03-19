@@ -1,5 +1,4 @@
 import { useCallback, useEffect } from 'react';
-import BleManager from 'react-native-ble-manager';
 
 import { useBluetooth } from './useBluetooth';
 import commandHandler from '../utils/commandHandler';
@@ -59,7 +58,7 @@ export const useECUCommands = (): ECUCommandsHook => {
         } catch (error) {
           throw new BluetoothOBDError(
             BluetoothErrorType.WRITE_ERROR,
-            `Failed to write command: ${error instanceof Error ? error.message : String(error)}`
+            `Failed to write command: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
       };
@@ -107,7 +106,7 @@ export const useECUCommands = (): ECUCommandsHook => {
       const hexValue = response.replace(/\s+/g, '');
       const a = parseInt(hexValue.substring(0, 2), 16);
       const b = parseInt(hexValue.substring(2, 4), 16);
-      return ((a * 256) + b) / 4;
+      return (a * 256 + b) / 4;
     } catch (error) {
       console.error('Failed to get RPM:', error);
       return null;
@@ -156,14 +155,17 @@ export const useECUCommands = (): ECUCommandsHook => {
       const response = await sendCommand('03');
       const codes: string[] = [];
       const hexData = response.replace(/\s+/g, '').match(/[0-9A-F]{4}/g) || [];
-      
+
       for (const code of hexData) {
         const firstChar = parseInt(code[0], 16);
         const prefix = ['P', 'C', 'B', 'U'][firstChar >> 2] || 'P';
-        const digits = ((firstChar & 0x03) << 14 | parseInt(code.slice(1), 16)).toString(16).toUpperCase().padStart(4, '0');
+        const digits = (((firstChar & 0x03) << 14) | parseInt(code.slice(1), 16))
+          .toString(16)
+          .toUpperCase()
+          .padStart(4, '0');
         codes.push(prefix + digits);
       }
-      
+
       return codes;
     } catch (error) {
       console.error('Failed to get trouble codes:', error);
@@ -186,7 +188,10 @@ export const useECUCommands = (): ECUCommandsHook => {
     if (!connectedDevice || !sendCommand) return null;
     return createRawECUConnector({
       sendCommand,
-      disconnect: async () => {},
+      disconnect: async () => {
+        // Disconnection is handled by the BluetoothContext
+        return Promise.resolve();
+      },
       isConnected: () => !!connectedDevice,
     });
   }, [connectedDevice, sendCommand]);
@@ -195,7 +200,10 @@ export const useECUCommands = (): ECUCommandsHook => {
     if (!connectedDevice || !sendCommand) return null;
     return createDecodedECUConnector({
       sendCommand,
-      disconnect: async () => {},
+      disconnect: async () => {
+        // Disconnection is handled by the BluetoothContext
+        return Promise.resolve();
+      },
       isConnected: () => !!connectedDevice,
     });
   }, [connectedDevice, sendCommand]);
