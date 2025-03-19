@@ -1,11 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ScrollView, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  FlatList,
+  ScrollView,
+  ActivityIndicator,
+} from 'react-native';
 
 import { useOBDManager } from '../hooks/useOBDManager';
+import { BluetoothDeviceInfo } from '../types/bluetoothTypes';
 
 /**
  * OBD Live Data Example
- * 
+ *
  * This component demonstrates how to use the OBD Manager to:
  * 1. Scan for and connect to OBD devices
  * 2. Initialize the OBD interface
@@ -30,7 +39,7 @@ const OBDLiveDataComponent = () => {
   const obd = useOBDManager({
     autoInit: true,
     connectToLast: true,
-    onConnected: (deviceId) => {
+    onConnected: deviceId => {
       console.log(`Connected to device: ${deviceId}`);
     },
     onDisconnected: () => {
@@ -38,7 +47,7 @@ const OBDLiveDataComponent = () => {
       // Stop polling when disconnected
       stopPolling();
     },
-    onError: (error) => {
+    onError: error => {
       console.error('OBD Error:', error);
     },
   });
@@ -58,20 +67,20 @@ const OBDLiveDataComponent = () => {
   // Start polling for live data
   const startPolling = () => {
     if (dataPolling) return;
-    
+
     setDataPolling(true);
-    
+
     // Poll for data every second
     const interval = setInterval(async () => {
       if (!obd.isConnected) {
         stopPolling();
         return;
       }
-      
+
       try {
         // Get live data
         const data = await obd.getLiveData();
-        
+
         // Get battery voltage (less frequently to avoid overloading)
         if (Math.random() > 0.7) {
           const voltage = await obd.getBatteryVoltage();
@@ -83,7 +92,7 @@ const OBDLiveDataComponent = () => {
         console.warn('Error polling data:', error);
       }
     }, 1000);
-    
+
     setPollingInterval(interval);
   };
 
@@ -127,20 +136,22 @@ const OBDLiveDataComponent = () => {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <Text style={styles.title}>OBD-II Live Data</Text>
-      
+
       {/* Connection Status */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Connection Status</Text>
         <View style={styles.statusContainer}>
           <Text style={styles.statusLabel}>Status:</Text>
-          <Text style={[
-            styles.statusValue, 
-            obd.isConnected ? styles.statusConnected : styles.statusDisconnected
-          ]}>
+          <Text
+            style={[
+              styles.statusValue,
+              obd.isConnected ? styles.statusConnected : styles.statusDisconnected,
+            ]}
+          >
             {obd.status.toUpperCase()}
           </Text>
         </View>
-        
+
         {obd.connectedDevice && (
           <View style={styles.deviceInfo}>
             <Text style={styles.deviceName}>{obd.connectedDevice.name || 'Unknown Device'}</Text>
@@ -148,24 +159,22 @@ const OBDLiveDataComponent = () => {
           </View>
         )}
       </View>
-      
+
       {/* Actions */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Actions</Text>
         <View style={styles.buttonRow}>
-          <TouchableOpacity 
-            style={[styles.button, scanning && styles.buttonDisabled]} 
+          <TouchableOpacity
+            style={[styles.button, scanning && styles.buttonDisabled]}
             onPress={startScan}
             disabled={scanning || dataPolling}
           >
-            <Text style={styles.buttonText}>
-              {scanning ? 'Scanning...' : 'Scan for Devices'}
-            </Text>
+            <Text style={styles.buttonText}>{scanning ? 'Scanning...' : 'Scan for Devices'}</Text>
           </TouchableOpacity>
-          
+
           {obd.isConnected ? (
-            <TouchableOpacity 
-              style={[styles.button, styles.disconnectButton]} 
+            <TouchableOpacity
+              style={[styles.button, styles.disconnectButton]}
               onPress={() => obd.disconnect()}
               disabled={dataPolling}
             >
@@ -173,37 +182,31 @@ const OBDLiveDataComponent = () => {
             </TouchableOpacity>
           ) : null}
         </View>
-        
+
         {dataPolling ? (
-          <TouchableOpacity 
-            style={[styles.button, styles.stopButton]} 
-            onPress={stopPolling}
-          >
+          <TouchableOpacity style={[styles.button, styles.stopButton]} onPress={stopPolling}>
             <Text style={styles.buttonText}>Stop Data Polling</Text>
           </TouchableOpacity>
         ) : (
           obd.isConnected && (
-            <TouchableOpacity 
-              style={[styles.button, styles.startButton]} 
-              onPress={startPolling}
-            >
+            <TouchableOpacity style={[styles.button, styles.startButton]} onPress={startPolling}>
               <Text style={styles.buttonText}>Start Data Polling</Text>
             </TouchableOpacity>
           )
         )}
-        
+
         {obd.isConnected && (
           <View style={styles.buttonRow}>
-            <TouchableOpacity 
-              style={styles.button} 
+            <TouchableOpacity
+              style={styles.button}
               onPress={readTroubleCodes}
               disabled={dataPolling}
             >
               <Text style={styles.buttonText}>Read DTCs</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.button, troubleCodes.length === 0 && styles.buttonDisabled]} 
+
+            <TouchableOpacity
+              style={[styles.button, troubleCodes.length === 0 && styles.buttonDisabled]}
               onPress={clearTroubleCodes}
               disabled={troubleCodes.length === 0 || dataPolling}
             >
@@ -212,41 +215,41 @@ const OBDLiveDataComponent = () => {
           </View>
         )}
       </View>
-      
+
       {/* Available Devices */}
-      {!obd.isConnected && obd.bluetooth.discoveredDevices && obd.bluetooth.discoveredDevices.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Available Devices</Text>
-          <FlatList
-            data={obd.bluetooth.discoveredDevices}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity 
-                style={styles.deviceItem}
-                onPress={() => connectToDevice(item.id)}
-                disabled={scanning}
-              >
-                <Text style={styles.deviceItemName}>{item.name || 'Unknown Device'}</Text>
-                <Text style={styles.deviceItemId}>{item.id}</Text>
-              </TouchableOpacity>
-            )}
-            style={styles.deviceList}
-          />
-        </View>
-      )}
-      
+      {!obd.isConnected &&
+        obd.bluetooth.discoveredDevices &&
+        obd.bluetooth.discoveredDevices.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Available Devices</Text>
+            <FlatList
+              data={obd.bluetooth.discoveredDevices}
+              keyExtractor={(item: BluetoothDeviceInfo) => item.id}
+              renderItem={({ item }: { item: BluetoothDeviceInfo }) => (
+                <TouchableOpacity
+                  style={styles.deviceItem}
+                  onPress={() => connectToDevice(item.id)}
+                >
+                  <Text style={styles.deviceName}>{item.name || 'Unknown Device'}</Text>
+                  <Text style={styles.deviceId}>{item.id}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        )}
+
       {/* Live Data Display */}
       {obd.isConnected && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Live Data</Text>
-          
+
           {dataPolling && !liveData.rpm && !liveData.speed && (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#0000ff" />
               <Text style={styles.loadingText}>Waiting for data...</Text>
             </View>
           )}
-          
+
           <View style={styles.dataGrid}>
             <View style={styles.dataItem}>
               <Text style={styles.dataLabel}>RPM</Text>
@@ -254,38 +257,42 @@ const OBDLiveDataComponent = () => {
                 {liveData.rpm !== undefined ? `${Math.round(liveData.rpm)}` : '-'}
               </Text>
             </View>
-            
+
             <View style={styles.dataItem}>
               <Text style={styles.dataLabel}>Speed</Text>
               <Text style={styles.dataValue}>
                 {liveData.speed !== undefined ? `${liveData.speed} km/h` : '-'}
               </Text>
             </View>
-            
+
             <View style={styles.dataItem}>
               <Text style={styles.dataLabel}>Coolant</Text>
               <Text style={styles.dataValue}>
                 {liveData.coolantTemp !== undefined ? `${liveData.coolantTemp}°C` : '-'}
               </Text>
             </View>
-            
+
             <View style={styles.dataItem}>
               <Text style={styles.dataLabel}>Throttle</Text>
               <Text style={styles.dataValue}>
-                {liveData.throttlePosition !== undefined ? `${Math.round(liveData.throttlePosition)}%` : '-'}
+                {liveData.throttlePosition !== undefined
+                  ? `${Math.round(liveData.throttlePosition)}%`
+                  : '-'}
               </Text>
             </View>
-            
+
             <View style={styles.dataItem}>
               <Text style={styles.dataLabel}>Battery</Text>
               <Text style={styles.dataValue}>
-                {liveData.batteryVoltage !== undefined ? `${liveData.batteryVoltage.toFixed(1)}V` : '-'}
+                {liveData.batteryVoltage !== undefined
+                  ? `${liveData.batteryVoltage.toFixed(1)}V`
+                  : '-'}
               </Text>
             </View>
           </View>
         </View>
       )}
-      
+
       {/* Trouble Codes */}
       {obd.isConnected && troubleCodes.length > 0 && (
         <View style={styles.section}>
@@ -297,14 +304,12 @@ const OBDLiveDataComponent = () => {
           ))}
         </View>
       )}
-      
+
       {/* Protocol Info */}
       {obd.isConnected && obd.obdProtocol && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Protocol Information</Text>
-          <Text style={styles.protocolText}>
-            Protocol: {obd.obdProtocol}
-          </Text>
+          <Text style={styles.protocolText}>Protocol: {obd.obdProtocol}</Text>
         </View>
       )}
     </ScrollView>
@@ -416,15 +421,6 @@ const styles = StyleSheet.create({
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#EEE',
-  },
-  deviceItemName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  deviceItemId: {
-    fontSize: 14,
-    color: '#666',
   },
   dataGrid: {
     flexDirection: 'row',

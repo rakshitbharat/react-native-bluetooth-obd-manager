@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 
-import { useBluetooth } from '../context/BluetoothContext';
+import useBluetooth from '../hooks/useBluetooth';
 
 const MinimalOBDExampleComponent: React.FC = () => {
   const {

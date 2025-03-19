@@ -8,7 +8,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
-import { useBluetooth } from '../context/BluetoothContext';
+import useBluetooth from '../hooks/useBluetooth';
+import { BluetoothDeviceInfo } from '../types/bluetoothTypes';
 import { ELM_COMMANDS } from '../utils/obdUtils';
 
 interface DeviceItemProps {
@@ -150,8 +151,8 @@ const OBDDeviceScannerComponent: React.FC = () => {
 
       <FlatList
         data={discoveredDevices}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
+        keyExtractor={(item: BluetoothDeviceInfo) => item.id}
+        renderItem={({ item }: { item: BluetoothDeviceInfo }) => (
           <DeviceItem
             name={item.name || 'Unknown Device'}
             id={item.id}

@@ -26,7 +26,12 @@ export interface MonitoringOptions {
 }
 
 const DEFAULT_REFRESH_RATE = 1000; // 1 second
-const DEFAULT_PIDS: Array<keyof Omit<MonitoredData, 'lastUpdated'>> = ['rpm', 'speed', 'coolantTemp', 'throttlePosition'];
+const DEFAULT_PIDS: Array<keyof Omit<MonitoredData, 'lastUpdated'>> = [
+  'rpm',
+  'speed',
+  'coolantTemp',
+  'throttlePosition',
+];
 
 const INITIAL_DATA: MonitoredData = {
   rpm: null,
@@ -41,7 +46,9 @@ const INITIAL_DATA: MonitoredData = {
  * @param options Configuration options for monitoring
  * @returns Monitoring state and control functions
  */
-export const useOBDMonitoring = (options: MonitoringOptions = {}): {
+export const useOBDMonitoring = (
+  options: MonitoringOptions = {},
+): {
   data: MonitoredData;
   isMonitoring: boolean;
   startMonitoring: () => boolean;
@@ -96,57 +103,53 @@ export const useOBDMonitoring = (options: MonitoringOptions = {}): {
 
         if (enabledPids.includes('rpm')) {
           updatePromises.push(
-            sendCommand(STANDARD_PIDS.ENGINE_RPM)
-              .then(rpmResponse => {
-                const rpm = parseEngineRPM(rpmResponse);
-                setData(prev => ({
-                  ...prev,
-                  rpm,
-                  lastUpdated: { ...prev.lastUpdated, rpm: Date.now() },
-                }));
-              })
+            sendCommand(STANDARD_PIDS.ENGINE_RPM).then(rpmResponse => {
+              const rpm = parseEngineRPM(rpmResponse);
+              setData(prev => ({
+                ...prev,
+                rpm,
+                lastUpdated: { ...prev.lastUpdated, rpm: Date.now() },
+              }));
+            }),
           );
         }
 
         if (enabledPids.includes('speed')) {
           updatePromises.push(
-            sendCommand(STANDARD_PIDS.VEHICLE_SPEED)
-              .then(speedResponse => {
-                const speed = parseVehicleSpeed(speedResponse);
-                setData(prev => ({
-                  ...prev,
-                  speed,
-                  lastUpdated: { ...prev.lastUpdated, speed: Date.now() },
-                }));
-              })
+            sendCommand(STANDARD_PIDS.VEHICLE_SPEED).then(speedResponse => {
+              const speed = parseVehicleSpeed(speedResponse);
+              setData(prev => ({
+                ...prev,
+                speed,
+                lastUpdated: { ...prev.lastUpdated, speed: Date.now() },
+              }));
+            }),
           );
         }
 
         if (enabledPids.includes('coolantTemp')) {
           updatePromises.push(
-            sendCommand(STANDARD_PIDS.ENGINE_COOLANT_TEMP)
-              .then(tempResponse => {
-                const temp = parseEngineCoolantTemp(tempResponse);
-                setData(prev => ({
-                  ...prev,
-                  coolantTemp: temp,
-                  lastUpdated: { ...prev.lastUpdated, coolantTemp: Date.now() },
-                }));
-              })
+            sendCommand(STANDARD_PIDS.ENGINE_COOLANT_TEMP).then(tempResponse => {
+              const temp = parseEngineCoolantTemp(tempResponse);
+              setData(prev => ({
+                ...prev,
+                coolantTemp: temp,
+                lastUpdated: { ...prev.lastUpdated, coolantTemp: Date.now() },
+              }));
+            }),
           );
         }
 
         if (enabledPids.includes('throttlePosition')) {
           updatePromises.push(
-            sendCommand(STANDARD_PIDS.THROTTLE_POSITION)
-              .then(throttleResponse => {
-                const throttle = parseThrottlePosition(throttleResponse);
-                setData(prev => ({
-                  ...prev,
-                  throttlePosition: throttle,
-                  lastUpdated: { ...prev.lastUpdated, throttlePosition: Date.now() },
-                }));
-              })
+            sendCommand(STANDARD_PIDS.THROTTLE_POSITION).then(throttleResponse => {
+              const throttle = parseThrottlePosition(throttleResponse);
+              setData(prev => ({
+                ...prev,
+                throttlePosition: throttle,
+                lastUpdated: { ...prev.lastUpdated, throttlePosition: Date.now() },
+              }));
+            }),
           );
         }
 
@@ -158,7 +161,10 @@ export const useOBDMonitoring = (options: MonitoringOptions = {}): {
           monitoringIntervalRef.current = setTimeout(monitoringLoop, refreshRate);
         }
       } catch (error) {
-        console.error('Error during OBD monitoring:', error instanceof BluetoothOBDError ? error.message : error);
+        console.error(
+          'Error during OBD monitoring:',
+          error instanceof BluetoothOBDError ? error.message : error,
+        );
         stopMonitoring();
       }
     };
