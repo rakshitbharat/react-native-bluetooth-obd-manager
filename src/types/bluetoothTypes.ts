@@ -13,11 +13,11 @@ export interface BluetoothDeviceInfo {
 export interface ConnectionDetails {
   serviceUUID: string;
   characteristicUUID: string;
-  writeCharacteristicUUID?: string;  // Added missing property
+  writeCharacteristicUUID?: string; // Added missing property
   notifyCharacteristicUUID?: string; // Added missing property
   writeWithResponse: boolean;
   mtu?: number;
-  device?: BluetoothDeviceInfo;      // Added missing property
+  device?: BluetoothDeviceInfo; // Added missing property
 }
 
 export interface BluetoothState {
@@ -100,7 +100,7 @@ export enum BluetoothActionType {
   COMPLETE_COMMAND = 'COMPLETE_COMMAND',
   RESET_STREAM = 'RESET_STREAM',
   SET_ERROR = 'SET_ERROR',
-  
+
   // Add missing action types from bluetoothReducer.ts
   SET_SCANNING = 'SET_SCANNING',
   SET_CONNECTED = 'SET_CONNECTED',
@@ -109,35 +109,10 @@ export enum BluetoothActionType {
   REMOVE_DEVICE = 'REMOVE_DEVICE',
   CLEAR_ERROR = 'CLEAR_ERROR',
   SET_CONNECTION_DETAILS = 'SET_CONNECTION_DETAILS',
-  RESET = 'RESET'
+  RESET = 'RESET',
 }
 
-export type BluetoothAction =
-  | { type: BluetoothActionType.INITIALIZE_SUCCESS }
-  | { type: BluetoothActionType.INITIALIZE_FAILURE }
-  | { type: BluetoothActionType.UPDATE_BLUETOOTH_STATE; payload: boolean }
-  | { type: BluetoothActionType.UPDATE_PERMISSIONS; payload: boolean }
-  | { type: BluetoothActionType.SCAN_START }
-  | { type: BluetoothActionType.SCAN_STOP }
-  | { type: BluetoothActionType.DEVICE_DISCOVERED; payload: Peripheral }
-  | { type: BluetoothActionType.CONNECT_START }
-  | { type: BluetoothActionType.CONNECT_SUCCESS; payload: { device: Peripheral; details: ConnectionDetails } }
-  | { type: BluetoothActionType.CONNECT_FAILURE; payload?: string }
-  | { type: BluetoothActionType.DISCONNECT_SUCCESS }
-  | { type: BluetoothActionType.SEND_COMMAND; payload: string }
-  | { type: BluetoothActionType.RECEIVE_DATA; payload: string }
-  | { type: BluetoothActionType.COMPLETE_COMMAND }
-  | { type: BluetoothActionType.RESET_STREAM }
-  | { type: BluetoothActionType.SET_ERROR; payload: string }
-  // Add missing action types from bluetoothReducer.ts
-  | { type: BluetoothActionType.SET_SCANNING; payload: boolean }
-  | { type: BluetoothActionType.SET_CONNECTED; payload: boolean }
-  | { type: BluetoothActionType.SET_DEVICES; payload: BluetoothDeviceInfo[] }
-  | { type: BluetoothActionType.ADD_DEVICE; payload: BluetoothDeviceInfo }
-  | { type: BluetoothActionType.REMOVE_DEVICE; payload: string }
-  | { type: BluetoothActionType.CLEAR_ERROR }
-  | { type: BluetoothActionType.SET_CONNECTION_DETAILS; payload: ConnectionDetails | null }
-  | { type: BluetoothActionType.RESET };
+export type BluetoothAction = { type: BluetoothActionType | string; payload?: any };
 
 // Define a context interface to fix errors in useBluetooth
 export interface BluetoothContextValue {
@@ -154,7 +129,7 @@ export interface BluetoothContextValue {
   error: BluetoothOBDError | null;
   isStreaming: boolean;
   pendingCommand: string | null;
-  
+
   // Methods used in hooks
   initialize: () => Promise<boolean>;
   requestPermissions: () => Promise<boolean>;

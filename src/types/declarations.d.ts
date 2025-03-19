@@ -5,6 +5,29 @@ declare module 'react-native' {
     removeAllListeners(eventType: string): void;
   }
 
+  export interface EmitterSubscription {
+    remove(): void;
+  }
+
+  export interface PermissionsAndroidStatic {
+    PERMISSIONS: {
+      ACCESS_FINE_LOCATION: string;
+      ACCESS_COARSE_LOCATION: string;
+      BLUETOOTH_SCAN: string;
+      BLUETOOTH_CONNECT: string;
+    };
+    RESULTS: {
+      GRANTED: string;
+      DENIED: string;
+      NEVER_ASK_AGAIN: string;
+    };
+    check(permission: string): Promise<boolean>;
+    request(permission: string): Promise<string>;
+    requestMultiple(permissions: string[]): Promise<Record<string, string>>;
+  }
+
+  export const PermissionsAndroid: PermissionsAndroidStatic;
+
   export interface NativeModulesStatic {
     BleManager: {
       addListener(eventType: string, listener: (event: any) => void): void;
@@ -16,6 +39,8 @@ declare module 'react-native' {
         characteristicUUID: string,
         data: number[],
       ): Promise<void>;
+      getState(): Promise<string>;
+      enableBluetooth(): Promise<boolean>;
     };
   }
 

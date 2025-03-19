@@ -1,4 +1,10 @@
-import { Platform, NativeEventEmitter, NativeModules, EmitterSubscription, PermissionsAndroid } from 'react-native';
+import {
+  Platform,
+  NativeEventEmitter,
+  NativeModules,
+  EmitterSubscription,
+  PermissionsAndroid,
+} from 'react-native';
 import BleManager from 'react-native-ble-manager';
 import { PERMISSIONS, RESULTS, checkMultiple } from 'react-native-permissions';
 
@@ -45,15 +51,13 @@ export async function requestBluetoothPermissions(attempt = 1): Promise<boolean>
     const needsNewPermissions = typeof Platform.Version === 'number' && Platform.Version >= 31;
 
     // Build the list of required permissions
-    const permissions = [
-      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-    ];
+    const permissions = [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
 
     // Add the new permissions for Android 12+
     if (needsNewPermissions) {
       permissions.push(
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT
+        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
       );
     } else {
       // For older Android versions
@@ -65,7 +69,7 @@ export async function requestBluetoothPermissions(attempt = 1): Promise<boolean>
 
     // Check if all permissions were granted
     const allGranted = Object.values(granted).every(
-      status => status === PermissionsAndroid.RESULTS.GRANTED
+      status => status === PermissionsAndroid.RESULTS.GRANTED,
     );
 
     if (allGranted) {
@@ -104,28 +108,23 @@ export async function checkBluetoothPermissions(): Promise<boolean> {
 
     // For Android 12+ (API level 31+), we need BLUETOOTH_SCAN and BLUETOOTH_CONNECT
     const needsNewPermissions = typeof Platform.Version === 'number' && Platform.Version >= 31;
-    
-    const basePermissions = [
-      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-    ];
+
+    const basePermissions = [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
 
     const permissions = [...basePermissions];
 
     // Add new permissions for Android 12+
     if (needsNewPermissions) {
-      permissions.push(
-        'android.permission.BLUETOOTH_SCAN',
-        'android.permission.BLUETOOTH_CONNECT'
-      );
+      permissions.push('android.permission.BLUETOOTH_SCAN', 'android.permission.BLUETOOTH_CONNECT');
     }
 
     // Check all required permissions
     const results = await Promise.all(
-      permissions.map(permission => PermissionsAndroid.check(permission))
+      permissions.map(permission => PermissionsAndroid.check(permission)),
     );
 
     // Return true only if ALL permissions are granted
-    return results.every(result => result === true);
+    return results.every((result: boolean) => result === true);
   } catch (error) {
     console.error('Error checking permissions:', error);
     return false;
@@ -141,34 +140,34 @@ export async function checkBluetoothState(): Promise<boolean> {
     if (Platform.OS === 'android') {
       // On Android, we use the BleManager module
       const manager = NativeModules.BleManager;
-      
+
       // Get the current state
-      const state = await new Promise<string>((resolve) => {
+      const state = await new Promise<string>(resolve => {
         const emitter = new NativeEventEmitter(manager);
-        const subscription = emitter.addListener('BleManagerDidUpdateState', (state) => {
+        const subscription = emitter.addListener('BleManagerDidUpdateState', state => {
           subscription.remove();
           resolve(state.state);
         });
-        
+
         // Trigger state check
         manager.getState();
       });
-      
+
       return state === 'on';
     } else {
       // On iOS, the state is sent via events
       const manager = NativeModules.BleManager;
-      const state = await new Promise<string>((resolve) => {
+      const state = await new Promise<string>(resolve => {
         const emitter = new NativeEventEmitter(manager);
-        const subscription = emitter.addListener('BleManagerDidUpdateState', (state) => {
+        const subscription = emitter.addListener('BleManagerDidUpdateState', state => {
           subscription.remove();
           resolve(state.state);
         });
-        
+
         // Trigger state check
         manager.getState();
       });
-      
+
       return state === 'on' || state === 'poweredOn';
     }
   } catch (error) {
@@ -182,14 +181,12 @@ export async function checkBluetoothState(): Promise<boolean> {
  * @param onStateChange Callback function for state changes
  * @returns Cleanup function to stop monitoring
  */
-export const monitorBluetoothState = (
-  onStateChange: (isOn: boolean) => void
-): (() => void) => {
+export const monitorBluetoothState = (onStateChange: (isOn: boolean) => void): (() => void) => {
   let stateChangeListener: EmitterSubscription | null = null;
 
   try {
     const bleManagerEmitter = new NativeEventEmitter(NativeModules.BleManager);
-    
+
     // Listen for state changes
     stateChangeListener = bleManagerEmitter.addListener('BleManagerDidUpdateState', ({ state }) => {
       if (Platform.OS === 'android') {
@@ -198,10 +195,10 @@ export const monitorBluetoothState = (
         onStateChange(state === 'on' || state === 'poweredOn');
       }
     });
-    
+
     // Initial state check
     NativeModules.BleManager.getState();
-    
+
     // Return cleanup function
     return () => {
       if (stateChangeListener) {
@@ -247,28 +244,28 @@ export const setupBluetooth = async (): Promise<boolean> => {
   try {
     // First check permissions
     const hasPermissions = await checkBluetoothPermissions();
-    
+
     if (!hasPermissions) {
       const granted = await requestBluetoothPermissions();
       if (!granted) {
         throw new BluetoothOBDError(
           BluetoothErrorType.PERMISSION_ERROR,
-          'Bluetooth permissions denied'
+          'Bluetooth permissions denied',
         );
       }
     }
-    
+
     // Then check and request Bluetooth state
     const isEnabled = await checkBluetoothState();
-    
+
     if (!isEnabled) {
       await requestBluetoothEnable();
-      
+
       // Re-check after request
       const newState = await checkBluetoothState();
       return newState;
     }
-    
+
     return true;
   } catch (error) {
     console.error('Error setting up Bluetooth:', error);

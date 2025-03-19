@@ -34,7 +34,7 @@ const OBDTerminalComponent: React.FC = () => {
   const [command, setCommand] = useState('');
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<any>(null);
 
   // Add log entry
   const addLog = (type: LogEntry['type'], message: string) => {
