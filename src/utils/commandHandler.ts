@@ -1,9 +1,9 @@
 import { Observable, firstValueFrom, Subject, timer } from 'rxjs';
-import { filter, take, timeout } from 'rxjs/operators';
+import { filter, take, timeout, map } from 'rxjs/operators';
 
 import { isResponseComplete } from './dataUtils';
 import { BluetoothErrorType, BluetoothOBDError } from './errorUtils';
-import notificationHandler from './notificationHandler';
+import notificationHandler, { RawResponse } from './notificationHandler';
 
 // Default timeout in ms
 const DEFAULT_TIMEOUT = 5000;
@@ -108,14 +108,16 @@ class CommandHandler {
     this.currentCommand = command;
     this.clearTimeout();
     try {
-      // Get response stream for this device
+      // Get response stream and map it to just the text portion
       const responseStream = notificationHandler
         .getCompleteResponseStream(deviceId)
         .pipe(
-          filter(response => isResponseComplete(response)),
+          map((response: RawResponse) => response.text),
+          filter(text => isResponseComplete(text)),
           take(1)
         );
-      // Create a timeout stream
+
+      // Create a timeout error
       const timeoutError = new BluetoothOBDError(
         BluetoothErrorType.TIMEOUT_ERROR,
         `Command "${command}" timed out after ${timeoutMs}ms`
@@ -124,21 +126,22 @@ class CommandHandler {
       // Send the command
       await writeFn();
       
-      // Race between response and timeout - ensure we always return a string
+      // Race between response and timeout
       const response = await firstValueFrom(
-        responseStream.pipe(timeout({ 
-          first: timeoutMs, 
-          with: () => timer(0).pipe(
-            take(1),
-            filter(() => {
-              throw timeoutError;
-            })
-          )
-        }))
+        responseStream.pipe(
+          timeout({
+            first: timeoutMs,
+            with: () => timer(0).pipe(
+              take(1),
+              map(() => {
+                throw timeoutError;
+              })
+            )
+          })
+        )
       );
       
-      // Make sure we return a string
-      return response !== 0 ? response : '';
+      return response;
     } catch (error) {
       if (error instanceof BluetoothOBDError) {
         throw error;
