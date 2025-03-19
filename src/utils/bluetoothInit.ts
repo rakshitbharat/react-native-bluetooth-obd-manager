@@ -17,10 +17,14 @@ export const initializeBluetooth = async (): Promise<BluetoothState> => {
       isBluetoothOn: false, // Will be updated by state check
       hasPermissions: false, // Will be updated by permission check
       isScanning: false,
+      isConnected: false,
       discoveredDevices: [],
-      connectedDevice: null,
+      connectedDevice: undefined, // Changed from null to undefined
       connectionDetails: null,
       error: null,
+      isStreaming: false,
+      pendingCommand: undefined, // Changed from null to undefined
+      devices: [] // Required property in BluetoothState
     };
   } catch (error) {
     throw new BluetoothOBDError(

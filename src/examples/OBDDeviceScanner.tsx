@@ -28,7 +28,7 @@ const DeviceItem: React.FC<DeviceItemProps> = ({ name, id, rssi, onPress }) => (
   </TouchableOpacity>
 );
 
-export const OBDDeviceScanner: React.FC = () => {
+const OBDDeviceScannerComponent: React.FC = () => {
   const {
     isBluetoothOn,
     hasPermissions,
@@ -153,7 +153,7 @@ export const OBDDeviceScanner: React.FC = () => {
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
           <DeviceItem
-            name={item.name}
+            name={item.name || 'Unknown Device'}
             id={item.id}
             rssi={item.rssi}
             onPress={() => handleDevicePress(item.id)}
@@ -247,3 +247,5 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 });
+
+export const OBDDeviceScanner = OBDDeviceScannerComponent;

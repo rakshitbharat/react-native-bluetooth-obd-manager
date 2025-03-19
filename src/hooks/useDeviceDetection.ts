@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Peripheral } from 'react-native-ble-manager';
-
 import { useBluetooth } from './useBluetooth';
+import { BluetoothDeviceInfo } from '../types/bluetoothTypes';
 
 /**
  * Keywords commonly found in OBD device names
@@ -21,7 +20,7 @@ const OBD_KEYWORDS = [
 /**
  * Check if a device is likely an OBD device based on name
  */
-const isOBDCompatibleDevice = (device: Peripheral): boolean => {
+const isOBDCompatibleDevice = (device: BluetoothDeviceInfo): boolean => {
   if (!device.name) return false;
 
   const deviceNameLower = device.name.toLowerCase();
@@ -33,20 +32,22 @@ const isOBDCompatibleDevice = (device: Peripheral): boolean => {
  */
 export const useDeviceDetection = () => {
   const { scanDevices, discoveredDevices, isScanning } = useBluetooth();
-  const [obdDevices, setObdDevices] = useState<Peripheral[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState<Peripheral | null>(null);
+  const [obdDevices, setObdDevices] = useState<BluetoothDeviceInfo[]>([]);
+  const [selectedDevice, setSelectedDevice] = useState<BluetoothDeviceInfo | null>(null);
   const [autoConnectDevice, setAutoConnectDevice] = useState<string | null>(null);
 
   /**
    * Filter discovered devices for OBD-compatible ones
    */
   useEffect(() => {
+    if (!discoveredDevices) return;
+
     const filteredDevices = discoveredDevices.filter(isOBDCompatibleDevice);
     setObdDevices(filteredDevices);
 
     // If we have an auto-connect device, try to find it
     if (autoConnectDevice && !selectedDevice) {
-      const deviceToConnect = filteredDevices.find((d: Peripheral) => d.id === autoConnectDevice);
+      const deviceToConnect = filteredDevices.find((d: BluetoothDeviceInfo) => d.id === autoConnectDevice);
       if (deviceToConnect) {
         setSelectedDevice(deviceToConnect);
       }
@@ -92,6 +93,6 @@ export const useDeviceDetection = () => {
     selectedDevice,
     setSelectedDevice,
     resetSelection,
-    allDevices: discoveredDevices,
+    allDevices: discoveredDevices || [],
   };
 };

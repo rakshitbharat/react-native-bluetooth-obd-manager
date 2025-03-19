@@ -29,7 +29,7 @@ const QUICK_COMMANDS = [
   { label: 'Temp', command: '0105' },
 ];
 
-export const OBDTerminal: React.FC = () => {
+const OBDTerminalComponent: React.FC = () => {
   const { connectedDevice, sendCommand } = useBluetooth();
   const [command, setCommand] = useState('');
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -293,3 +293,5 @@ const styles = StyleSheet.create({
     color: '#666',
   },
 });
+
+export const OBDTerminal = OBDTerminalComponent;

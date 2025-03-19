@@ -1,6 +1,4 @@
-/**
- * Utilities for handling OBD PIDs (Parameter IDs)
- */
+import { BluetoothOBDError, BluetoothErrorType } from './errorUtils';
 
 /**
  * PID details including unit, name, and min/max values
@@ -8,17 +6,17 @@
 export interface PidInfo {
   name: string;
   description: string;
-  unit: string;
-  minValue?: number;
-  maxValue?: number;
+  unit?: string;
   mode: number;
   pid: number;
   bytes: number;
-  formula?: string;
+  formula: string;
+  min?: number;
+  max?: number;
 }
 
 /**
- * Standard OBD modes
+ * Standard OBD modes as defined by SAE J1979
  */
 export enum OBDMode {
   CURRENT_DATA = 1,
@@ -38,19 +36,133 @@ export enum OBDMode {
  */
 export const PID_INFO: Record<string, PidInfo> = {
   // Mode 1 PIDs (current data)
-  '0100': { name: 'PIDs Supported [01-20]', description: 'Supported PIDs in range 01-20', unit: 'Bitmap', mode: 1, pid: 0, bytes: 4, formula: 'Bitmap' },
-  '0101': { name: 'Monitor Status', description: 'OBD Monitor status since DTCs cleared', unit: 'Bitmap', mode: 1, pid: 1, bytes: 4, formula: 'Bitmap' },
-  '0104': { name: 'Engine Load', description: 'Calculated engine load', unit: '%', mode: 1, pid: 4, bytes: 1, minValue: 0, maxValue: 100, formula: 'A * 100 / 255' },
-  '0105': { name: 'Coolant Temp', description: 'Engine coolant temperature', unit: '°C', mode: 1, pid: 5, bytes: 1, minValue: -40, maxValue: 215, formula: 'A - 40' },
-  '010C': { name: 'Engine RPM', description: 'Engine RPM', unit: 'rpm', mode: 1, pid: 12, bytes: 2, minValue: 0, maxValue: 16383.75, formula: '((A * 256) + B) / 4' },
-  '010D': { name: 'Vehicle Speed', description: 'Vehicle speed', unit: 'km/h', mode: 1, pid: 13, bytes: 1, minValue: 0, maxValue: 255, formula: 'A' },
-  '010F': { name: 'Intake Temp', description: 'Intake air temperature', unit: '°C', mode: 1, pid: 15, bytes: 1, minValue: -40, maxValue: 215, formula: 'A - 40' },
-  '0111': { name: 'Throttle Position', description: 'Throttle position', unit: '%', mode: 1, pid: 17, bytes: 1, minValue: 0, maxValue: 100, formula: 'A * 100 / 255' },
-  '011C': { name: 'OBD Standard', description: 'OBD standards this vehicle conforms to', unit: '', mode: 1, pid: 28, bytes: 1, formula: 'Enum' },
-  '0120': { name: 'PIDs Supported [21-40]', description: 'Supported PIDs in range 21-40', unit: 'Bitmap', mode: 1, pid: 32, bytes: 4, formula: 'Bitmap' },
+  '0100': { 
+    name: 'PIDs Supported [01-20]',
+    description: 'Supported PIDs in range 01-20',
+    unit: 'Bitmap',
+    mode: 1,
+    pid: 0,
+    bytes: 4,
+    formula: 'Bitmap'
+  },
+  '0101': {
+    name: 'Monitor status since DTCs cleared',
+    description: 'Status of onboard diagnostics',
+    mode: 1,
+    pid: 1,
+    bytes: 4,
+    formula: 'Bitmap'
+  },
+  '0104': {
+    name: 'Calculated engine load',
+    description: 'Indicates relative engine load',
+    unit: '%',
+    mode: 1,
+    pid: 4,
+    bytes: 1,
+    formula: 'A*100/255',
+    min: 0,
+    max: 100
+  },
+  '0105': {
+    name: 'Engine coolant temperature',
+    description: 'Temperature of engine coolant',
+    unit: '°C',
+    mode: 1,
+    pid: 5,
+    bytes: 1,
+    formula: 'A-40',
+    min: -40,
+    max: 215
+  },
+  '010C': {
+    name: 'Engine RPM',
+    description: 'Engine speed in revolutions per minute',
+    unit: 'rpm',
+    mode: 1,
+    pid: 12,
+    bytes: 2,
+    formula: '((A*256)+B)/4',
+    min: 0,
+    max: 16383.75
+  },
+  '010D': {
+    name: 'Vehicle speed',
+    description: 'Current vehicle speed',
+    unit: 'km/h',
+    mode: 1,
+    pid: 13,
+    bytes: 1,
+    formula: 'A',
+    min: 0,
+    max: 255
+  }
+};
+
+/**
+ * Format mode and PID for OBD command
+ */
+export const formatPID = (mode: number | string, pid: number | string): string => {
+  if (typeof mode !== 'number' && typeof mode !== 'string') {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.INVALID_PARAMETER,
+      'Mode must be a number or string'
+    );
+  }
+  if (typeof pid !== 'number' && typeof pid !== 'string') {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.INVALID_PARAMETER,
+      'PID must be a number or string'
+    );
+  }
+
+  const modeHex = (typeof mode === 'number' ? mode : parseInt(mode, 16))
+    .toString(16)
+    .padStart(2, '0')
+    .toUpperCase();
+
+  const pidHex = (typeof pid === 'number' ? pid : parseInt(pid, 16))
+    .toString(16)
+    .padStart(2, '0')
+    .toUpperCase();
+
+  return modeHex + pidHex;
+};
+
+/**
+ * Get PID info by mode and PID
+ */
+export const getPIDInfo = (mode: number, pid: number): PidInfo | null => {
+  const key = formatPID(mode, pid);
+  return PID_INFO[key] || null;
+};
+
+/**
+ * Check if a PID is supported based on bitmap response
+ */
+export const isPIDSupported = (bitmap: string, pid: number): boolean => {
+  if (!bitmap || !/^[0-9A-Fa-f]+$/.test(bitmap)) {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.INVALID_PARAMETER,
+      'Invalid bitmap format'
+    );
+  }
+
+  if (pid < 1 || pid > 32) {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.INVALID_PARAMETER,
+      'PID must be between 1 and 32'
+    );
+  }
+
+  // Convert hex string to number
+  const bits = parseInt(bitmap, 16);
   
-  // Mode 9 PIDs (vehicle info)
-  '0902': { name: 'VIN', description: 'Vehicle Identification Number', unit: '', mode: 9, pid: 2, bytes: 20, formula: 'ASCII' }
+  // The bit position is (32 - pid)
+  // Bit 31 (leftmost) = PID 0x01, Bit 0 (rightmost) = PID 0x20
+  const bitPosition = 31 - (pid - 1);
+  
+  return (bits & (1 << bitPosition)) !== 0;
 };
 
 /**
@@ -143,4 +255,50 @@ export const convertPidValue = (response: string, command: string): number | nul
   
   // If no specific conversion found or conversion failed
   return null;
+};
+
+/**
+ * Convert PID value based on its formula
+ */
+export const convertPIDValue = (
+  value: string,
+  mode: number,
+  pid: number
+): number | null => {
+  try {
+    const pidInfo = getPIDInfo(mode, pid);
+    if (!pidInfo) return null;
+
+    const hexValue = value.replace(/\s+/g, '');
+    if (hexValue.length < pidInfo.bytes * 2) return null;
+
+    // Extract bytes A, B, C, D as needed
+    const bytes = {
+      A: parseInt(hexValue.substring(0, 2), 16),
+      B: hexValue.length >= 4 ? parseInt(hexValue.substring(2, 4), 16) : 0,
+      C: hexValue.length >= 6 ? parseInt(hexValue.substring(4, 6), 16) : 0,
+      D: hexValue.length >= 8 ? parseInt(hexValue.substring(6, 8), 16) : 0
+    };
+
+    // Apply formula based on PID
+    switch (pidInfo.formula) {
+      case 'A':
+        return bytes.A;
+      case 'A-40':
+        return bytes.A - 40;
+      case 'A*100/255':
+        return (bytes.A * 100) / 255;
+      case '((A*256)+B)/4':
+        return ((bytes.A * 256) + bytes.B) / 4;
+      case 'A/2':
+        return bytes.A / 2;
+      default:
+        return null;
+    }
+  } catch (error) {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.DATA_ERROR,
+      `Failed to convert PID value: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 };

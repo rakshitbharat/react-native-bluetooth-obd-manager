@@ -1,20 +1,24 @@
 import React, { createContext, useCallback, useContext, useEffect, useReducer, useRef } from 'react';
-import { NativeEventEmitter, NativeModules } from 'react-native';
+import { NativeEventEmitter, NativeModules, Platform, EmitterSubscription } from 'react-native';
 import BleManager from 'react-native-ble-manager';
 
 import { bluetoothReducer, initialState } from './bluetoothReducer';
-import { BluetoothState, BluetoothActionType } from '../types/bluetoothTypes';
+import { BluetoothState, BluetoothActionType, ConnectionDetails } from '../types/bluetoothTypes';
 import { decodeData, isResponseComplete, encodeCommand, formatResponse } from '../utils/dataUtils';
+import { findServiceAndCharacteristic, isOBDDevice } from '../utils/deviceUtils';
 import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
 import { requestBluetoothPermissions, checkBluetoothState } from '../utils/permissionUtils';
+import { addDeviceToHistory, getLastConnectedDevice, getRecentDevices, saveLastConnectedDevice } from '../utils/statePersistence';
 
-interface BluetoothContextType extends BluetoothState {
+export interface BluetoothContextType extends BluetoothState {
   scanDevices: (timeoutMs?: number) => Promise<boolean>;
   connectToDevice: (deviceId: string) => Promise<boolean>;
   disconnect: (deviceId: string) => Promise<boolean>;
   sendCommand: (command: string, timeoutMs?: number) => Promise<string>;
   requestPermissions: () => Promise<boolean>;
   isConnected: boolean;
+  getRecentDevices: () => Promise<any[]>;
+  reconnectToLastDevice: () => Promise<boolean>;
 }
 
 // Create the context
@@ -29,6 +33,10 @@ const CONNECTION_RETRY_ATTEMPTS = 3;
 const CONNECTION_RETRY_DELAY = 1000;
 const COMMAND_DEFAULT_TIMEOUT = 4000;
 
+// OBD characteristic UUIDs
+const DEFAULT_CHARACTERISTIC_UUID_SHORT = 'fff1';
+const DEFAULT_CHARACTERISTIC_UUID = Platform.OS === 'android' ? 'fff1' : '0000fff1-0000-1000-8000-00805f9b34fb';
+
 // Common ELM327 service UUIDs for reference - used in service discovery
 const OBD_SERVICE_UUIDS = [
   'FFF0', // Most common
@@ -40,7 +48,10 @@ const OBD_SERVICE_UUIDS = [
   'FFF1', // Another clone variant
 ];
 
-// Singleton for BLE data receiver
+/**
+ * Singleton class to handle Bluetooth data reception from OBD devices
+ * Manages data buffering, timeouts and response completion detection
+ */
 class BLEDataReceiver {
   static instance: BLEDataReceiver;
   responseBuffer = '';
@@ -49,6 +60,9 @@ class BLEDataReceiver {
   completeResponseReceived = false;
   lastError: Error | null = null;
   receiveStartTime = 0;
+  timeoutHandler: NodeJS.Timeout | null = null;
+  responseResolver: ((value: void) => void) | null = null;
+  responseRejecter: ((reason: Error) => void) | null = null;
 
   static getInstance(): BLEDataReceiver {
     if (!BLEDataReceiver.instance) {
@@ -74,17 +88,30 @@ class BLEDataReceiver {
       if (isResponseComplete(this.responseBuffer)) {
         this.rawCompleteResponse = [...this.rawResponseBuffer];
         this.completeResponseReceived = true;
+        
+        // If we have a pending promise resolver, resolve it
+        if (this.responseResolver) {
+          this.responseResolver();
+          this.responseResolver = null;
+          this.responseRejecter = null;
+          this.clearTimeout();
+        }
+        
         return true;
-      }
-
-      // Check for timeout based on time since start
-      if (Date.now() - this.receiveStartTime > COMMAND_DEFAULT_TIMEOUT) {
-        throw new Error('Response timeout');
       }
 
       return false;
     } catch (error) {
       this.lastError = error as Error;
+      
+      // If we have a pending promise rejecter, reject it
+      if (this.responseRejecter) {
+        this.responseRejecter(this.lastError);
+        this.responseResolver = null;
+        this.responseRejecter = null;
+        this.clearTimeout();
+      }
+      
       return false;
     }
   }
@@ -96,6 +123,9 @@ class BLEDataReceiver {
     this.completeResponseReceived = false;
     this.lastError = null;
     this.receiveStartTime = 0;
+    this.clearTimeout();
+    this.responseResolver = null;
+    this.responseRejecter = null;
   }
 
   getResponse(): { response: string; error: Error | null } {
@@ -106,12 +136,38 @@ class BLEDataReceiver {
   }
 
   async waitForResponse(timeoutMs: number = COMMAND_DEFAULT_TIMEOUT): Promise<void> {
-    const startTime = Date.now();
-    while (!this.completeResponseReceived) {
-      if (Date.now() - startTime > timeoutMs) {
-        throw new Error('Response timeout');
-      }
-      await new Promise(resolve => setTimeout(resolve, 50));
+    // If response is already complete, return immediately
+    if (this.completeResponseReceived) {
+      return;
+    }
+
+    // Set up a new promise to wait for response or timeout
+    return new Promise<void>((resolve, reject) => {
+      this.responseResolver = resolve;
+      this.responseRejecter = reject;
+      
+      // Set timeout to reject the promise if no response is received in time
+      this.timeoutHandler = setTimeout(() => {
+        const timeoutError = new BluetoothOBDError(
+          BluetoothErrorType.TIMEOUT_ERROR, 
+          `Command timed out after ${timeoutMs}ms`
+        );
+        this.lastError = timeoutError;
+        
+        if (this.responseRejecter) {
+          this.responseRejecter(timeoutError);
+        }
+        
+        this.responseResolver = null;
+        this.responseRejecter = null;
+      }, timeoutMs);
+    });
+  }
+  
+  clearTimeout(): void {
+    if (this.timeoutHandler !== null) {
+      clearTimeout(this.timeoutHandler);
+      this.timeoutHandler = null;
     }
   }
 }
@@ -126,6 +182,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     hasPermissions,
     connectedDevice,
     connectionDetails,
+    isScanning,
     isStreaming,
     pendingCommand,
   } = state;
@@ -134,6 +191,78 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const commandTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // Flag to track if we're currently establishing a connection
   const isConnectingRef = useRef<boolean>(false);
+
+  // Enhanced sendCommand with direct response waiting
+  const sendCommand = useCallback(async (
+    command: string,
+    timeoutMs: number = COMMAND_DEFAULT_TIMEOUT,
+  ): Promise<string> => {
+    if (!connectedDevice || !connectionDetails) {
+      throw new BluetoothOBDError(
+        BluetoothErrorType.CONNECTION_ERROR,
+        'No device connected'
+      );
+    }
+
+    // Reset data receiver state
+    dataReceiver.reset();
+
+    // Format command with carriage return
+    const cmdWithCR = command.endsWith('\r') ? command : `${command}\r`;
+    const bytes = encodeCommand(cmdWithCR);
+
+    try {
+      dispatch({ type: BluetoothActionType.SEND_COMMAND, payload: command });
+
+      // Send the command using the right method based on the device capabilities
+      if (connectionDetails.writeWithResponse) {
+        await BleManager.write(
+          connectedDevice.id,
+          connectionDetails.serviceUUID,
+          connectionDetails.writeCharacteristicUUID,
+          bytes,
+        );
+      } else {
+        await BleManager.writeWithoutResponse(
+          connectedDevice.id,
+          connectionDetails.serviceUUID,
+          connectionDetails.writeCharacteristicUUID,
+          bytes,
+        );
+      }
+
+      // Wait for response with timeout
+      await dataReceiver.waitForResponse(timeoutMs);
+
+      const { response, error } = dataReceiver.getResponse();
+
+      if (error) throw error;
+
+      dispatch({ type: BluetoothActionType.COMPLETE_COMMAND });
+      
+      // Format the response to clean up cruft
+      const formattedResponse = formatResponse(response, command);
+      
+      return formattedResponse;
+    } catch (error) {
+      // If there's an error, reset the streaming state
+      dispatch({ type: BluetoothActionType.RESET_STREAM });
+      
+      // If it's a timeout, throw a specific error
+      if (error instanceof Error && error.message.includes('timeout')) {
+        throw new BluetoothOBDError(
+          BluetoothErrorType.TIMEOUT_ERROR,
+          `Command "${command}" timed out after ${timeoutMs}ms`
+        );
+      }
+      
+      // Otherwise throw a general error
+      throw new BluetoothOBDError(
+        BluetoothErrorType.WRITE_ERROR,
+        `Failed to send command: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }, [connectedDevice, connectionDetails, dispatch]);
 
   const disconnect = useCallback(async (deviceId: string) => {
     if (!deviceId) return false;
@@ -286,8 +415,22 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
   }, [isStreaming]);
 
+  // Save last connected device when connecting/disconnecting
+  useEffect(() => {
+    if (connectedDevice) {
+      // Save to device history when connected
+      addDeviceToHistory(connectedDevice, isOBDDevice(connectedDevice));
+      saveLastConnectedDevice(connectedDevice.id);
+    }
+  }, [connectedDevice]);
+
   // Scan for nearby Bluetooth devices
   const scanDevices = async (timeoutMs = 5000) => {
+    if (isScanning) {
+      // Already scanning - don't start another scan
+      return true;
+    }
+    
     if (!isBluetoothOn || !hasPermissions) {
       dispatch({
         type: BluetoothActionType.SET_ERROR,
@@ -360,7 +503,8 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   
         if (!isConnected) {
           await BleManager.connect(deviceId);
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Wait longer for older ELM327 devices that need more time to initialize
+          await new Promise(resolve => setTimeout(resolve, 1500));
         }
   
         // Get device services with retries
@@ -369,60 +513,20 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (!peripheralInfo.services || !peripheralInfo.characteristics) {
           throw new Error('Failed to retrieve services or characteristics');
         }
-  
-        // Find OBD service
-        const service = peripheralInfo.services.find(s => {
-          const serviceUUID = Platform.OS === 'ios' ? s.uuid.toLowerCase() : s.uuid;
-          return OBD_SERVICE_UUIDS.some(
-            uuid =>
-              serviceUUID === uuid.toLowerCase() ||
-              serviceUUID === `0000${uuid.toLowerCase()}-0000-1000-8000-00805f9b34fb`,
-          );
-        });
-  
-        if (!service) {
-          throw new Error('OBD service not found');
-        }
-  
-        // Find characteristics
-        const characteristics = peripheralInfo.characteristics.filter(
-          c => c.service === service.uuid,
-        );
-  
-        // Find write characteristic
-        const writeCharacteristic = characteristics.find(c => {
-          const canWrite =
-            c.properties?.Write === 'Write' ||
-            c.properties?.WriteWithoutResponse === 'WriteWithoutResponse';
-          return canWrite;
-        });
-  
-        // Find notify characteristic
-        const notifyCharacteristic = characteristics.find(
-          c =>
-            c.properties?.Notify === 'Notify' ||
-            c.characteristic === DEFAULT_CHARACTERISTIC_UUID_SHORT ||
-            c.characteristic === DEFAULT_CHARACTERISTIC_UUID,
-        );
-  
-        if (!writeCharacteristic || !notifyCharacteristic) {
-          throw new Error('Required characteristics not found');
+
+        // Use our enhanced service discovery
+        const connectionDetails = await findServiceAndCharacteristic(peripheralInfo);
+        
+        if (!connectionDetails) {
+          throw new Error('Could not find suitable service and characteristics');
         }
   
         // Start notification
         await BleManager.startNotification(
           deviceId,
-          service.uuid,
-          notifyCharacteristic.characteristic,
+          connectionDetails.serviceUUID,
+          connectionDetails.notifyCharacteristicUUID,
         );
-  
-        // Store connection details
-        const connectionDetails = {
-          serviceUUID: service.uuid,
-          writeCharacteristicUUID: writeCharacteristic.characteristic,
-          notifyCharacteristicUUID: notifyCharacteristic.characteristic,
-          writeWithResponse: writeCharacteristic.properties?.Write === 'Write',
-        };
   
         dispatch({
           type: BluetoothActionType.CONNECT_SUCCESS,
@@ -433,6 +537,25 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         });
   
         isConnectingRef.current = false;
+        
+        // Initialize the device with some basic commands
+        try {
+          // Reset the adapter
+          await sendCommand('ATZ');
+          
+          // Turn off echo
+          await sendCommand('ATE0');
+          
+          // Turn off line feeds
+          await sendCommand('ATL0');
+          
+          // Turn on automatic protocol detection
+          await sendCommand('ATSP0');
+        } catch (error) {
+          console.warn('Failed to initialize device with AT commands:', error);
+          // Continue even if initialization fails, as some devices work anyway
+        }
+        
         return true;
       } catch (error) {
         retryCount--;
@@ -451,60 +574,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   
     return false;
-  }, [connectedDevice, disconnect]);
-
-  // Enhanced sendCommand with direct response waiting
-  const sendCommand = useCallback(async (
-    command: string,
-    timeoutMs: number = COMMAND_DEFAULT_TIMEOUT,
-  ): Promise<string> => {
-    if (!connectedDevice || !connectionDetails) {
-      throw new BluetoothOBDError(
-        BluetoothErrorType.CONNECTION_ERROR,
-        'No device connected'
-      );
-    }
-
-    dataReceiver.reset();
-
-    const cmdWithCR = command.endsWith('\r') ? command : `${command}\r`;
-    const bytes = encodeCommand(cmdWithCR);
-
-    try {
-      dispatch({ type: BluetoothActionType.SEND_COMMAND, payload: command });
-
-      if (connectionDetails.writeWithResponse) {
-        await BleManager.write(
-          connectedDevice.id,
-          connectionDetails.serviceUUID,
-          connectionDetails.writeCharacteristicUUID,
-          bytes,
-        );
-      } else {
-        await BleManager.writeWithoutResponse(
-          connectedDevice.id,
-          connectionDetails.serviceUUID,
-          connectionDetails.writeCharacteristicUUID,
-          bytes,
-        );
-      }
-
-      await dataReceiver.waitForResponse(timeoutMs);
-
-      const { response, error } = dataReceiver.getResponse();
-
-      if (error) throw error;
-
-      dispatch({ type: BluetoothActionType.COMPLETE_COMMAND });
-      return formatResponse(response, command);
-    } catch (error) {
-      dispatch({ type: BluetoothActionType.RESET_STREAM });
-      throw new BluetoothOBDError(
-        BluetoothErrorType.WRITE_ERROR,
-        `Failed to send command: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }, [connectedDevice, connectionDetails, dispatch]);
+  }, [connectedDevice, disconnect, sendCommand]);
 
   // Set up notification handler
   useEffect(() => {
@@ -543,6 +613,32 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
   }, [connectedDevice, connectionDetails, disconnect, handleNotification]);
 
+  // Get recent devices from history
+  const fetchRecentDevices = useCallback(async () => {
+    try {
+      return await getRecentDevices();
+    } catch (error) {
+      console.error('Failed to get recent devices:', error);
+      return [];
+    }
+  }, []);
+
+  // Reconnect to the last connected device
+  const reconnectToLastDevice = useCallback(async (): Promise<boolean> => {
+    try {
+      const lastDeviceId = await getLastConnectedDevice();
+      
+      if (!lastDeviceId) {
+        return false;
+      }
+      
+      return await connectToDevice(lastDeviceId);
+    } catch (error) {
+      console.error('Failed to reconnect to last device:', error);
+      return false;
+    }
+  }, [connectToDevice]);
+
   // Context value
   const contextValue: BluetoothContextType = {
     ...state,
@@ -559,6 +655,8 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return permissions;
     },
     isConnected: !!connectedDevice,
+    getRecentDevices: fetchRecentDevices,
+    reconnectToLastDevice,
   };
 
   return (

@@ -14,6 +14,9 @@ interface DeviceProfile {
   writeWithResponse: boolean;
   lastConnected: number;
   successCount: number;
+  isOBDDevice: boolean;
+  manufacturer?: string;
+  model?: string;
 }
 
 class DeviceCompatibilityManager {
@@ -64,6 +67,7 @@ class DeviceCompatibilityManager {
     deviceId: string,
     deviceName: string,
     connectionDetails: ConnectionDetails,
+    isOBDDevice = true,
   ): Promise<void> {
     await this.loadDeviceHistory();
 
@@ -76,14 +80,16 @@ class DeviceCompatibilityManager {
       writeWithResponse: false,
       lastConnected: 0,
       successCount: 0,
+      isOBDDevice: isOBDDevice,
     };
 
     profile.serviceUUID = connectionDetails.serviceUUID;
-    profile.writeCharacteristic = connectionDetails.writeCharacteristicUUID;
-    profile.notifyCharacteristic = connectionDetails.notifyCharacteristicUUID;
+    profile.writeCharacteristic = connectionDetails.writeCharacteristicUUID || connectionDetails.characteristicUUID;
+    profile.notifyCharacteristic = connectionDetails.notifyCharacteristicUUID || connectionDetails.characteristicUUID;
     profile.writeWithResponse = connectionDetails.writeWithResponse;
     profile.lastConnected = Date.now();
     profile.successCount++;
+    profile.isOBDDevice = isOBDDevice;
 
     this.deviceHistory.set(deviceId, profile);
     await this.saveDeviceHistory();
@@ -97,22 +103,69 @@ class DeviceCompatibilityManager {
 
     return {
       serviceUUID: profile.serviceUUID,
+      characteristicUUID: profile.notifyCharacteristic,
       writeCharacteristicUUID: profile.writeCharacteristic,
       notifyCharacteristicUUID: profile.notifyCharacteristic,
       writeWithResponse: profile.writeWithResponse,
     };
   }
 
-  async getRecentDevices(limit = 5): Promise<DeviceProfile[]> {
+  async getRecentDevices(limit = 5, obdOnly = true): Promise<DeviceProfile[]> {
     await this.loadDeviceHistory();
 
-    return Array.from(this.deviceHistory.values())
+    let devices = Array.from(this.deviceHistory.values());
+    
+    // Filter for OBD devices if needed
+    if (obdOnly) {
+      devices = devices.filter(device => device.isOBDDevice);
+    }
+    
+    // Sort by last connection time (most recent first)
+    return devices
       .sort((a, b) => b.lastConnected - a.lastConnected)
       .slice(0, limit);
+  }
+  
+  async getMostUsedDevices(limit = 5, obdOnly = true): Promise<DeviceProfile[]> {
+    await this.loadDeviceHistory();
+
+    let devices = Array.from(this.deviceHistory.values());
+    
+    // Filter for OBD devices if needed
+    if (obdOnly) {
+      devices = devices.filter(device => device.isOBDDevice);
+    }
+    
+    // Sort by success count (most used first)
+    return devices
+      .sort((a, b) => b.successCount - a.successCount)
+      .slice(0, limit);
+  }
+
+  async updateDeviceInfo(deviceId: string, info: Partial<DeviceProfile>): Promise<void> {
+    await this.loadDeviceHistory();
+
+    const profile = this.deviceHistory.get(deviceId);
+    if (!profile) return;
+
+    this.deviceHistory.set(deviceId, { ...profile, ...info });
+    await this.saveDeviceHistory();
+  }
+
+  async isKnownOBDDevice(deviceId: string): Promise<boolean> {
+    await this.loadDeviceHistory();
+    const profile = this.deviceHistory.get(deviceId);
+    return !!profile && profile.isOBDDevice;
   }
 
   async clearDeviceHistory(): Promise<void> {
     this.deviceHistory.clear();
+    await this.saveDeviceHistory();
+  }
+  
+  async removeDevice(deviceId: string): Promise<void> {
+    await this.loadDeviceHistory();
+    this.deviceHistory.delete(deviceId);
     await this.saveDeviceHistory();
   }
 }
@@ -120,7 +173,7 @@ class DeviceCompatibilityManager {
 export default DeviceCompatibilityManager.getInstance();
 
 // Common keywords found in OBD device names
-const OBD_KEYWORDS = [
+export const OBD_KEYWORDS = [
   'obd',
   'elm',
   'elm327',
@@ -130,10 +183,20 @@ const OBD_KEYWORDS = [
   'scanner',
   'vgate',
   'interface',
+  'bluetooth',
+  'odbii',
+  'diagnostic',
+  'adapter',
+  'reader',
+  'scan',
+  'auto',
+  'automotive',
+  'v1.5',
+  'v2.1',
 ];
 
 // Keywords commonly found in non-OBD Bluetooth devices
-const NON_OBD_KEYWORDS = [
+export const NON_OBD_KEYWORDS = [
   'speaker',
   'headphone',
   'audio',
@@ -144,6 +207,18 @@ const NON_OBD_KEYWORDS = [
   'phone',
   'fitness',
   'printer',
+  'camera',
+  'keyboard',
+  'mouse',
+  'game',
+  'controller',
+  'remote',
+  'earphone',
+  'airpods',
+  'headset',
+  'bud',
+  'tag',
+  'tracker',
 ];
 
 /**
@@ -151,74 +226,86 @@ const NON_OBD_KEYWORDS = [
  * @param device Bluetooth peripheral device
  * @returns True if the device is likely an OBD adapter
  */
-export const isLikelyOBDDevice = (device: Peripheral): boolean => {
-  if (!device.name) return false;
+export function isOBDDevice(device: Peripheral): boolean {
+  if (!device) return false;
+  
+  const deviceName = (device.name || device.advertising?.localName || '').toLowerCase();
+  if (!deviceName) return false;
 
-  const name = device.name.toLowerCase();
-
-  // Check if name contains any OBD-related keywords
-  const hasOBDKeyword = OBD_KEYWORDS.some(keyword => name.includes(keyword));
-  if (hasOBDKeyword) return true;
-
-  // Exclude devices with common non-OBD keywords
-  const hasNonOBDKeyword = NON_OBD_KEYWORDS.some(keyword => name.includes(keyword));
-  if (hasNonOBDKeyword) return false;
-
-  // Check for common OBD device address prefixes
-  if (device.id && typeof device.id === 'string') {
-    // Some common OBD device address prefixes (not exhaustive)
-    const knownPrefixes = ['00:0D:18', '00:1D:A5', '00:04:3E'];
-    for (const prefix of knownPrefixes) {
-      if (device.id.toUpperCase().startsWith(prefix)) {
-        return true;
-      }
+  // If it contains OBD keywords, it's likely an OBD device
+  for (const keyword of OBD_KEYWORDS) {
+    if (deviceName.includes(keyword.toLowerCase())) {
+      return true;
     }
   }
 
+  // If it contains non-OBD keywords, it's likely not an OBD device
+  for (const keyword of NON_OBD_KEYWORDS) {
+    if (deviceName.includes(keyword.toLowerCase())) {
+      return false;
+    }
+  }
+
+  // If the device has a MAC address format typical of OBD devices
+  // Many ELM327 devices have specific MAC patterns
+  if (device.id && (
+      device.id.startsWith('00:0D:18:') ||  // Common ELM327 prefix
+      device.id.startsWith('00:1D:A5:') ||  // Another common prefix
+      device.id.startsWith('AC:D1:B8:')     // Chinese ELM327 clone prefix
+  )) {
+    return true;
+  }
+  
+  // Default to unknown
   return false;
-};
+}
 
 /**
- * Return compatibility score for a device (0-100)
- * Higher score means more likely to be compatible
+ * Get common ELM327 service and characteristics for a device
+ * based on historical data or common profiles
  */
-export const getOBDCompatibilityScore = (device: Peripheral): number => {
-  if (!device.name) return 0;
-
-  let score = 0;
-  const name = device.name.toLowerCase();
-
-  // Score based on device name
-  OBD_KEYWORDS.forEach(keyword => {
-    if (name.includes(keyword)) {
-      score += 20;
-    }
-  });
-
-  // Reduce score for non-OBD keywords
-  NON_OBD_KEYWORDS.forEach(keyword => {
-    if (name.includes(keyword)) {
-      score -= 15;
-    }
-  });
-
-  // Additional points for specific identifiers
-  if (name.includes('elm327')) score += 30;
-  if (name.includes('obdii')) score += 25;
-  if (name.includes('scanner')) score += 10;
-
-  // Clamp score between 0 and 100
-  return Math.max(0, Math.min(100, score));
-};
-
-/**
- * Sort devices by their OBD compatibility
- * Most compatible devices come first
- */
-export const sortDevicesByCompatibility = (devices: Peripheral[]): Peripheral[] => {
-  return [...devices].sort((a, b) => {
-    const scoreA = getOBDCompatibilityScore(a);
-    const scoreB = getOBDCompatibilityScore(b);
-    return scoreB - scoreA;
-  });
-};
+export function getCommonELM327Profile(deviceId: string): ConnectionDetails | null {
+  // Common service/characteristic profiles for OBD devices
+  const commonProfiles: ConnectionDetails[] = [
+    // Standard ELM327 profile
+    {
+      serviceUUID: 'FFF0',
+      characteristicUUID: 'FFF1',
+      writeCharacteristicUUID: 'FFF1',
+      notifyCharacteristicUUID: 'FFF1',
+      writeWithResponse: true,
+    },
+    // Alternative profile seen in some adapters
+    {
+      serviceUUID: 'FFE0',
+      characteristicUUID: 'FFE1',
+      writeCharacteristicUUID: 'FFE1',
+      notifyCharacteristicUUID: 'FFE1',
+      writeWithResponse: false,
+    },
+    // Yet another profile for Chinese clones
+    {
+      serviceUUID: 'E7A1',
+      characteristicUUID: 'E7A1',
+      writeCharacteristicUUID: 'E7A1',
+      notifyCharacteristicUUID: 'E7A1',
+      writeWithResponse: true,
+    },
+  ];
+  
+  // Check if this device ID matches known patterns
+  if (deviceId.startsWith('00:0D:18:')) {
+    return commonProfiles[0]; // Standard ELM327
+  }
+  
+  if (deviceId.startsWith('00:1D:A5:')) {
+    return commonProfiles[1]; // Alternative profile
+  }
+  
+  if (deviceId.startsWith('AC:D1:B8:')) {
+    return commonProfiles[2]; // Chinese clone profile
+  }
+  
+  // Default to most common profile
+  return commonProfiles[0];
+}

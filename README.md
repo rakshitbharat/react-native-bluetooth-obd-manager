@@ -1,51 +1,17 @@
 # React Native Bluetooth OBD Manager
 
-⚠️ **IMPORTANT PREREQUISITE NOTE** ⚠️
-This library is NOT a guide for setting up React Native or its dependencies. You MUST have a working React Native project with all necessary Bluetooth libraries properly installed and configured before using this library.
-
-## Required Prerequisites
-
-Before using this library, ensure you have:
-
-1. A working React Native project
-2. Properly installed and configured:
-   - react-native-ble-manager
-   - react-native-permissions
-3. Properly set up Bluetooth permissions in your iOS and Android projects
-4. Basic understanding of Bluetooth LE communication
-
-If you haven't set these up, this library will NOT work. Please set up your project with all dependencies first.
-
-## Purpose
-
-This library provides a stable connection interface for ELM327 OBD devices, focusing on three core functionalities:
-1. Connecting to OBD devices with smart service discovery
-2. Sending commands and receiving responses
-3. Clean disconnection and state management
+A comprehensive and robust library for connecting to ELM327-based OBD-II adapters via Bluetooth in React Native applications. This library makes it simple to scan for OBD adapters, connect to them, and retrieve vehicle data.
 
 ## Features
 
-### 🔗 Core Features
-
-1. **Smart Bluetooth Connection**
-   - Automatic service and characteristic discovery
-   - Support for old and new ELM327 adapters
-   - Built-in retry mechanism
-   - Connection state persistence
-   - Real-time connection status updates
-
-2. **Robust Command Interface**
-   - Direct command-response pattern
-   - Automatic response completion detection
-   - Command timeout protection
-   - Smart write characteristic selection
-   - Built-in command queuing
-
-3. **Clean Disconnection**
-   - Proper device reset before disconnect
-   - Automatic cleanup of notification listeners
-   - State reset on disconnect
-   - Reconnection handling
+- 🚙 Easy connection to any ELM327 OBD-II adapter via Bluetooth LE
+- 🔌 Automatic service and characteristic discovery
+- 🧰 Built-in support for standard OBD-II PIDs and commands
+- 📊 Live vehicle data monitoring (RPM, speed, temperature, etc.)
+- 🔍 Diagnostic trouble code (DTC) reading and clearing
+- 🔄 Automatic reconnection to previously used devices
+- 📱 React hooks-based API for easy integration
+- 🛠️ Includes ready-to-use UI components for quick implementation
 
 ## Installation
 
@@ -55,427 +21,291 @@ npm install react-native-bluetooth-obd-manager
 yarn add react-native-bluetooth-obd-manager
 ```
 
-## Quick Start
+### Dependencies
 
-1. **Wrap your app with BluetoothProvider:**
+This library relies on the following packages which will be installed automatically:
+
+- [react-native-ble-manager](https://github.com/innoveit/react-native-ble-manager)
+- [react-native-bluetooth-state-manager](https://github.com/Drazail/react-native-bluetooth-state-manager)
+- [@react-native-async-storage/async-storage](https://github.com/react-native-async-storage/async-storage)
+
+### Required permissions
+
+#### iOS
+Add the following to your `Info.plist`:
+
+```xml
+<key>NSBluetoothAlwaysUsageDescription</key>
+<string>This app uses Bluetooth to connect to OBD-II adapters</string>
+<key>NSBluetoothPeripheralUsageDescription</key>
+<string>This app uses Bluetooth to connect to OBD-II adapters</string>
+```
+
+#### Android
+Add the following permissions to your `AndroidManifest.xml`:
+
+```xml
+<uses-permission android:name="android.permission.BLUETOOTH" />
+<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<!-- For Android 12+ -->
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+```
+
+## Basic Usage
+
+### 1. Wrap your app with BluetoothProvider
 
 ```jsx
+import React from 'react';
 import { BluetoothProvider } from 'react-native-bluetooth-obd-manager';
 
-export default function App() {
+const App = () => {
   return (
     <BluetoothProvider>
-      <YourApp />
+      <YourAppContent />
     </BluetoothProvider>
   );
-}
+};
+
+export default App;
 ```
 
-2. **Use the hook in your components:**
+### 2. Use the OBDManager hook
 
 ```jsx
-import { useBluetooth } from 'react-native-bluetooth-obd-manager';
+import React, { useEffect, useState } from 'react';
+import { View, Text, Button } from 'react-native';
+import { useOBDManager } from 'react-native-bluetooth-obd-manager';
 
-function YourComponent() {
-  const { 
-    connectToDevice, 
-    sendCommand, 
-    disconnect
-  } = useBluetooth();
-
-  // Connect to device
-  const handleConnect = async (deviceId) => {
-    const connected = await connectToDevice(deviceId);
-    if (connected) {
-      // Device connected successfully
-      const response = await sendCommand('ATZ'); // Reset device
-      console.log('Device reset:', response);
+const OBDScreen = () => {
+  const [rpm, setRpm] = useState(null);
+  const [speed, setSpeed] = useState(null);
+  
+  const obd = useOBDManager({
+    onConnected: (deviceId) => console.log(`Connected to ${deviceId}`),
+    onDisconnected: () => console.log('Disconnected'),
+    onError: (error) => console.error('OBD Error:', error),
+  });
+  
+  const scanForDevices = async () => {
+    await obd.scanForDevices(5000); // Scan for 5 seconds
+  };
+  
+  const connectToDevice = async (deviceId) => {
+    await obd.connectToDevice(deviceId);
+  };
+  
+  const fetchData = async () => {
+    if (obd.isConnected) {
+      const rpmValue = await obd.getRPM();
+      const speedValue = await obd.getSpeed();
+      
+      setRpm(rpmValue);
+      setSpeed(speedValue);
     }
   };
+  
+  return (
+    <View style={{ flex: 1, padding: 20 }}>
+      <Text>Status: {obd.status}</Text>
+      
+      {obd.isConnected ? (
+        <View>
+          <Text>RPM: {rpm || 'Unknown'}</Text>
+          <Text>Speed: {speed ? `${speed} km/h` : 'Unknown'}</Text>
+          <Button title="Fetch Data" onPress={fetchData} />
+          <Button title="Disconnect" onPress={obd.disconnect} />
+        </View>
+      ) : (
+        <View>
+          <Button title="Scan for Devices" onPress={scanForDevices} />
+          
+          {obd.bluetooth.discoveredDevices.map(device => (
+            <Button 
+              key={device.id}
+              title={device.name || 'Unknown Device'} 
+              onPress={() => connectToDevice(device.id)}
+            />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+};
 
-  // Send a command
-  const handleCommand = async () => {
-    const rpm = await sendCommand('010C'); // Get engine RPM
-    console.log('Engine RPM:', rpm);
-  };
-
-  // Disconnect
-  const handleDisconnect = async (deviceId) => {
-    await disconnect(deviceId);
-  };
-}
+export default OBDScreen;
 ```
 
-## Example Components
-
-The library includes ready-to-use components:
-
-### MinimalOBDExample
-
-A minimal implementation showing core functionality:
+### 3. Or use the built-in components
 
 ```jsx
-import { MinimalOBDExample } from 'react-native-bluetooth-obd-manager/examples';
+import React from 'react';
+import { View } from 'react-native';
+import { OBDLiveData } from 'react-native-bluetooth-obd-manager';
 
-function App() {
-  return <MinimalOBDExample />;
-}
+const OBDScreen = () => {
+  return (
+    <View style={{ flex: 1 }}>
+      <OBDLiveData />
+    </View>
+  );
+};
+
+export default OBDScreen;
 ```
 
-### OBDDeviceScanner
+## API Reference
 
-For device discovery and connection:
+### BluetoothProvider
+
+The context provider that manages Bluetooth state and connections.
 
 ```jsx
-import { OBDDeviceScanner } from 'react-native-bluetooth-obd-manager/examples';
-
-function App() {
-  return <OBDDeviceScanner />;
-}
+<BluetoothProvider>
+  {/* Your app content */}
+</BluetoothProvider>
 ```
 
-### OBDTerminal 
+### useOBDManager Hook
 
-For direct command interface:
+The main hook for interacting with OBD devices.
+
+```javascript
+const obd = useOBDManager({
+  onConnected: (deviceId) => {},
+  onDisconnected: () => {},
+  onError: (error) => {},
+  autoInit: true,
+  connectToLast: true,
+});
+```
+
+#### Options
+
+| Name | Type | Default | Description |
+|------|------|---------|-------------|
+| `onConnected` | `(deviceId: string) => void` | `undefined` | Callback when device is connected |
+| `onDisconnected` | `() => void` | `undefined` | Callback when device is disconnected |
+| `onError` | `(error: Error) => void` | `undefined` | Callback when error occurs |
+| `autoInit` | `boolean` | `true` | Automatically initialize OBD on connection |
+| `connectToLast` | `boolean` | `true` | Try to reconnect to the last device on start |
+
+#### Return Value
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connectToDevice` | `(deviceId: string) => Promise<boolean>` | Connect to a device by ID |
+| `disconnect` | `() => Promise<boolean>` | Disconnect from current device |
+| `scanForDevices` | `(timeoutMs?: number) => Promise<boolean>` | Scan for available devices |
+| `reconnectToLastDevice` | `() => Promise<boolean>` | Reconnect to the last used device |
+| `getRecentDevices` | `() => Promise<Array<Device>>` | Get recently used devices |
+| `initialized` | `boolean` | Whether OBD interface is initialized |
+| `status` | `'disconnected'/'connecting'/'connected'/'ready'` | Current connection status |
+| `isConnected` | `boolean` | Whether connected to a device |
+| `connectedDevice` | `Device \| null` | Currently connected device |
+| `lastError` | `Error \| null` | Last error that occurred |
+| `sendCommand` | `(command: string, timeoutMs?: number) => Promise<string>` | Send raw OBD command |
+| `getRPM` | `() => Promise<number \| null>` | Get current engine RPM |
+| `getSpeed` | `() => Promise<number \| null>` | Get current vehicle speed |
+| `getCoolantTemp` | `() => Promise<number \| null>` | Get engine coolant temperature |
+| `getLiveData` | `() => Promise<{rpm?: number, speed?: number,...}>` | Get multiple data points |
+| `getDiagnosticCodes` | `() => Promise<string[]>` | Get diagnostic trouble codes |
+| `clearDiagnosticCodes` | `() => Promise<boolean>` | Clear trouble codes |
+| `getVIN` | `() => Promise<string \| null>` | Get vehicle identification number |
+| `getBatteryVoltage` | `() => Promise<number \| null>` | Get battery voltage |
+
+### Built-in Components
+
+#### OBDLiveData
+
+A ready-to-use component that displays live vehicle data.
 
 ```jsx
-import { OBDTerminal } from 'react-native-bluetooth-obd-manager/examples';
-
-function App() {
-  return <OBDTerminal />;
-}
+<OBDLiveData />
 ```
 
-## Internal Architecture
+#### OBDDeviceScanner
 
-### BluetoothContext
+A component for scanning and connecting to OBD devices.
 
-The library uses a Context-based architecture with Redux-style state management:
-
-1. **Global State Provider**
-   - Wraps entire application
-   - Manages runtime Bluetooth state
-   - Handles initialization lifecycle
-
-2. **State Management**
-   - Uses useReducer for predictable state updates
-   - Real-time Bluetooth state monitoring
-   - Automatic state persistence
-
-3. **Initialization Flow**
-   - Bluetooth module initialization check
-   - Permission verification
-   - Service discovery preparation
-
-### Data Reception System
-
-The library implements a sophisticated data reception system:
-
-1. **Notification Listener**
-   - Global singleton listener
-   - Automatic start on initialization
-   - No manual start/stop required
-   - Efficient memory management
-
-2. **Data Processing**
-   - Raw byte data handling
-   - Automatic conversion
-   - Response buffering
-   - Delimiter ('>') detection
-
-## Technical Implementation
-
-### Smart Device Discovery
-
-The library implements a robust device discovery system:
-
-1. **Service Discovery**
-   - Automatic service UUID detection
-   - Support for multiple ELM327 variants
-   - Fallback service detection
-   - Custom service mapping
-
-2. **Characteristic Handling**
-   - Dynamic write characteristic selection
-   - Support for:
-     - Write with response
-     - Write without response
-     - Multiple characteristic types
-   - Automatic characteristic selection
-
-### Command Processing
-
-1. **Command Pipeline**
-   - Automatic string to byte conversion
-   - Smart write method selection
-   - Response correlation
-   - Timeout handling
-
-2. **Streaming Management**
-   - Active streaming flag
-   - 4-second timeout protection
-   - Automatic stream recovery
-   - Out-of-sync detection
-
-### Enhanced Streaming Management
-
-The library uses RxJS for efficient stream processing:
-
-1. **Reactive Data Flow**
-   - Observable-based notification handling
-   - Efficient data streaming
-   - Automatic memory management
-   - Smart backpressure handling
-
-2. **Smart Response Detection**
-   - Reactive command response correlation
-   - Automatic stream cleanup
-   - Built-in error recovery
-   - Custom operator pipelines
-
-## Hook API
-
-### useBluetooth()
-
-The main hook providing Bluetooth functionality:
-
-```typescript
-const {
-  // States
-  isBluetoothOn: boolean;
-  hasPermissions: boolean;
-  isScanning: boolean;
-  discoveredDevices: Device[];
-  connectedDevice: Device | null;
-  error: string | null;
-
-  // Core Functions
-  connectToDevice: (deviceId: string) => Promise<boolean>;
-  sendCommand: (command: string, timeoutMs?: number) => Promise<string>;
-  disconnect: (deviceId: string) => Promise<boolean>;
-
-  // Additional Functions
-  scanDevices: (timeoutMs?: number) => Promise<boolean>;
-  requestPermissions: () => Promise<boolean>;
-} = useBluetooth();
+```jsx
+<OBDDeviceScanner onDeviceSelect={(device) => {}} />
 ```
 
-## Detailed Function Reference
+#### OBDTerminal
 
-### connectToDevice
+A terminal-like interface for sending raw commands to the OBD adapter.
 
-```typescript
-const connectToDevice: (deviceId: string) => Promise<boolean>;
+```jsx
+<OBDTerminal />
 ```
 
-Smart connection process:
-1. Service discovery
-2. Characteristic mapping
-3. Notification setup
-4. Connection validation
+## Advanced Usage
 
-### sendCommand
+### Custom OBD Commands
 
-```typescript
-const sendCommand: (command: string, timeoutMs?: number) => Promise<string>;
+You can send custom OBD commands using the `sendCommand` function:
+
+```javascript
+const response = await obd.sendCommand('010C'); // Get RPM
+console.log('Raw response:', response);
+
+// Or with mode and PID separated
+import { formatPidCommand, OBD_MODES } from 'react-native-bluetooth-obd-manager';
+
+const pidCommand = formatPidCommand(OBD_MODES.CURRENT_DATA, '0C');
+const response = await obd.sendCommand(pidCommand);
 ```
 
-Command execution flow:
-1. Command validation
-2. Byte conversion
-3. Write method selection
-4. Response correlation
-5. Delimiter detection
+### Value Conversion
 
-### disconnect
+You can convert raw OBD responses to meaningful values:
 
-```typescript
-const disconnect: (deviceId: string) => Promise<boolean>;
+```javascript
+import { convertPidValue } from 'react-native-bluetooth-obd-manager';
+
+const response = await obd.sendCommand('010C');
+const rpmValue = convertPidValue(response, '010C');
+console.log('Engine RPM:', rpmValue);
 ```
 
-Clean disconnection process:
-1. Command queue cleanup
-2. Notification handling
-3. State reset
-4. Resource cleanup
+### Device Compatibility Management
 
-## Device Compatibility
+The library includes utilities to manage device compatibility and remember previous connection details:
 
-The library includes smart service discovery that supports various ELM327 adapters:
+```javascript
+import { DeviceCompatibilityManager, isOBDDevice } from 'react-native-bluetooth-obd-manager';
 
-- Original ELM327 devices
-- Common clone variants
-- Chinese adapters with different service UUIDs
-- Both modern and legacy Bluetooth implementations
+// Check if a discovered device is likely an OBD adapter
+const devices = obd.bluetooth.discoveredDevices;
+const obdDevices = devices.filter(device => isOBDDevice(device));
 
-## Error Handling
-
-The library provides comprehensive error handling with the following error types:
-
-```typescript
-enum BluetoothErrorType {
-  INITIALIZATION_ERROR = 'INITIALIZATION_ERROR',
-  PERMISSION_ERROR = 'PERMISSION_ERROR',
-  CONNECTION_ERROR = 'CONNECTION_ERROR',
-  SERVICE_ERROR = 'SERVICE_ERROR',
-  CHARACTERISTIC_ERROR = 'CHARACTERISTIC_ERROR',
-  NOTIFICATION_ERROR = 'NOTIFICATION_ERROR',
-  WRITE_ERROR = 'WRITE_ERROR',
-  TIMEOUT_ERROR = 'TIMEOUT_ERROR'
-}
+// Get recently used OBD devices
+const recentDevices = await DeviceCompatibilityManager.getRecentDevices(5, true);
 ```
-
-Example error handling:
-
-```typescript
-try {
-  await connectToDevice(deviceId);
-} catch (error) {
-  if (error instanceof BluetoothOBDError) {
-    switch (error.type) {
-      case BluetoothErrorType.CONNECTION_ERROR:
-        // Handle connection error
-        break;
-      case BluetoothErrorType.TIMEOUT_ERROR:
-        // Handle timeout
-        break;
-    }
-  }
-}
-```
-
-## Best Practices
-
-1. **Always wrap your app with BluetoothProvider**
-   - Ensures proper initialization
-   - Handles permission requests
-   - Manages Bluetooth state
-
-2. **Use the provided hooks**
-   - They handle state management
-   - Provide proper cleanup
-   - Ensure stable connections
-
-3. **Handle disconnections gracefully**
-   - Listen for disconnection events
-   - Implement reconnection logic
-   - Clean up resources
-
-4. **Command sending**
-   - Add timeouts for commands
-   - Handle errors appropriately
-   - Use command queuing for multiple requests
 
 ## Troubleshooting
 
-### Common Issues
+### Connection Issues
 
-1. **Device Not Found**
-   - Ensure Bluetooth is enabled
-   - Check if device is powered on
-   - Verify permissions are granted
-   - For Android 12+, ensure location is enabled
+1. Make sure your device's Bluetooth is turned on
+2. Some OBD adapters need to be paired in the system settings first
+3. Try powering off and on the OBD adapter
+4. Verify that the OBD adapter is properly connected to the vehicle's OBD port
+5. Some vehicles require the ignition to be turned on for the OBD port to function
 
-2. **Connection Issues**
-   - Reset the OBD adapter
-   - Ensure proper voltage to adapter
-   - Check if car ignition is on
-   - Try restarting Bluetooth
+### Command Timeouts
 
-3. **Command Timeout**
-   - Check adapter power supply
-   - Verify command format
-   - Ensure stable connection
-   - Increase timeout for slow devices
-
-## Requirements
-
-- React Native >= 0.63.0
-- iOS 11+ or Android 6.0+
-- Bluetooth LE capable device
-- ELM327-compatible OBD-II adapter
-
-## Development and Testing
-
-### Setting Up Development Environment
-
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Build the library:
-   ```bash
-   npm run build
-   ```
-
-### Testing Framework
-
-This project uses Jest for comprehensive testing. The test suite is structured to cover all major components:
-
-1. **Unit Tests**: Test individual utilities and helper functions
-   - Data processing functions (encoding/decoding)
-   - PID conversion utilities
-   - OBD protocol handling
-   - Error management
-
-2. **Component Tests**: Test React components and hooks
-   - BluetoothContext provider and hook
-   - OBDManager singleton
-   - ECUConnector implementation
-
-3. **Mock Tests**: Test with mocked dependencies
-   - BLE Manager interactions
-   - Device discovery and connection
-   - Permission handling
-
-### Test Files Structure
-
-### Running Tests
-
-This project uses Jest for testing. To run the tests:
-
-```bash
-# Run all tests
-npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Generate coverage report
-npm run test:coverage
-```
-
-### Code Quality Tools
-
-- **ESLint**: `npm run lint`
-- **Prettier**: `npm run prettier`
-- **Validate all**: `npm run validate`
-
-### Pre-commit Hooks
-
-This project uses Husky to run pre-commit hooks that:
-- Lint staged files
-- Format code with Prettier
-- Run tests before pushing
-
-These hooks ensure code quality is maintained throughout the project.
-
-### CI/CD
-
-This project uses GitHub Actions for continuous integration and delivery:
-
-- **CI Workflow**: Runs on every pull request and push to main branches
-- **Release Workflow**: Automatically publishes to npm when a new version tag is pushed
+1. Increase the timeout value in the `sendCommand` function
+2. Check if the vehicle supports the PID you're requesting
+3. Make sure the engine is running for some PIDs that require the engine to be active
 
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on how to submit pull requests, report issues, and suggest enhancements.
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-MIT
-
-## Support
-
-For issues and feature requests, please use the [GitHub issue tracker](https://github.com/yourusername/react-native-bluetooth-obd-manager/issues).
+This project is licensed under the MIT License - see the LICENSE file for details.

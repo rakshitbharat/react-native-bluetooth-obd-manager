@@ -1,43 +1,251 @@
+import { Buffer } from 'buffer';
 import { stringToBytes } from 'convert-string';
 
+import { BluetoothOBDError, BluetoothErrorType } from './errorUtils';
+
 /**
- * Convert byte array to string
+ * Utilities for encoding/decoding Bluetooth data
+ * and handling OBD responses
  */
-export function decodeData(bytes: Uint8Array | number[]): string {
-  return String.fromCharCode(...bytes);
+
+export const ERROR_RESPONSES = [
+  'ERROR',
+  'UNABLE TO CONNECT',
+  'NO DATA',
+  'STOPPED',
+  'CAN ERROR',
+  'BUS ERROR'
+] as const;
+
+export type ErrorResponse = typeof ERROR_RESPONSES[number];
+
+export interface DecodedResponse<T> {
+  value: T;
+  raw: string;
+  isError: boolean;
+  errorType?: ErrorResponse;
 }
 
 /**
- * Convert command to bytes
+ * Convert byte array from BLE to string
+ * @param data Byte array from BLE characteristic
+ * @returns Decoded string
+ * @throws {BluetoothOBDError} If decoding fails
  */
-export function encodeCommand(command: string): number[] {
-  return stringToBytes(command);
-}
+export const decodeData = (data: number[] | Uint8Array): string => {
+  if (!data || (!Array.isArray(data) && !(data instanceof Uint8Array))) {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.DATA_ERROR,
+      'Invalid data format for decoding'
+    );
+  }
+
+  try {
+    const buffer = Array.isArray(data) ? Buffer.from(data) : Buffer.from(data);
+    return buffer.toString();
+  } catch (error) {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.DATA_ERROR,
+      `Failed to decode data: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+};
 
 /**
- * Check if OBD response is complete (ends with '>')
+ * Convert string to byte array for BLE transmission
+ * @param text String to convert to bytes
+ * @returns Byte array to send over BLE
+ * @throws {BluetoothOBDError} If encoding fails
  */
-export function isResponseComplete(response: string): boolean {
-  return response.includes('>');
-}
+export const encodeCommand = (text: string): number[] => {
+  if (typeof text !== 'string') {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.INVALID_PARAMETER,
+      'Command must be a string'
+    );
+  }
+
+  try {
+    return Array.from(Buffer.from(text));
+  } catch (error) {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.DATA_ERROR,
+      `Failed to encode command: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+};
 
 /**
- * Format OBD response 
+ * Check if a response from OBD is complete (contains the prompt character)
+ * @param response Response from OBD device
+ * @returns True if response is complete
+ */
+export const isResponseComplete = (response: string): boolean => {
+  if (!response) return false;
+  
+  // The '>' prompt signals end of response
+  if (response.includes('>')) return true;
+  
+  // Error responses don't include '>' but are still complete
+  return ERROR_RESPONSES.some(pattern => response.includes(pattern));
+};
+
+/**
+ * Format the OBD response for more readable output
+ * @param response Raw response from the OBD device
+ * @param command The command that was sent
+ * @returns Clean formatted response
  */
 export const formatResponse = (response: string, command: string): string => {
-  // Remove any leading/trailing whitespace
-  const trimmed = response.trim();
-  
-  // Remove the prompt character
-  const withoutPrompt = trimmed.replace(/>\s*$/, '');
-  
-  // Remove the echo of the command
-  const withoutEcho = withoutPrompt.replace(new RegExp(`^${command}\\s*`, 'i'), '');
-  
-  // Clean up any remaining whitespace
-  const cleaned = withoutEcho.trim();
-  
-  return cleaned;
+  if (!response) return '';
+
+  try {
+    // Remove command echo if present
+    let formatted = response;
+    const cmdWithoutCR = command.replace('\r', '');
+    if (formatted.startsWith(cmdWithoutCR)) {
+      formatted = formatted.substring(cmdWithoutCR.length).trim();
+    }
+
+    // Remove prompts, line breaks, and other noise
+    formatted = formatted
+      .replace(/>/g, '')
+      .replace(/\r/g, '')
+      .replace(/\n/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return formatted;
+  } catch (error) {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.DATA_ERROR,
+      `Failed to format response: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+};
+
+/**
+ * Parse OBD response to extract valuable data
+ * @param hexData The hex data response
+ * @param mode Command mode (default: '01')
+ * @param pid Command PID
+ * @returns Parsed value or original response if parsing fails
+ */
+export const parseOBDResponse = (
+  hexData: string, 
+  mode = '01',
+  pid = '00'
+): number | string => {
+  try {
+    // Clean up the response to get the data part only
+    const cleanData = hexData.replace(/[\s>\r\n]/g, '');
+    
+    // Get just the response data part (remove mode and PID echo in response)
+    let dataStart = cleanData.indexOf(mode + pid);
+    if (dataStart < 0) {
+      // Try the mode with 4 added (response often adds 4 to the mode)
+      const responseMode = (parseInt(mode, 16) + 0x40).toString(16).padStart(2, '0').toUpperCase();
+      dataStart = cleanData.indexOf(responseMode + pid);
+      
+      if (dataStart < 0) {
+        return hexData;
+      }
+    }
+    
+    // Extract just the data part, skipping mode and PID
+    const dataOnly = cleanData.substring(dataStart + 4);
+    
+    // Common OBD parsing cases
+    switch (mode + pid) {
+      // Engine RPM (mode 01, PID 0C)
+      case '010C': {
+        if (dataOnly.length < 4) return hexData;
+        const a = parseInt(dataOnly.substring(0, 2), 16);
+        const b = parseInt(dataOnly.substring(2, 4), 16);
+        return ((a * 256) + b) / 4;
+      }
+      
+      // Vehicle speed (mode 01, PID 0D)
+      case '010D': {
+        if (dataOnly.length < 2) return hexData;
+        return parseInt(dataOnly.substring(0, 2), 16);
+      }
+      
+      // Coolant temperature (mode 01, PID 05)
+      case '0105': {
+        if (dataOnly.length < 2) return hexData;
+        return parseInt(dataOnly.substring(0, 2), 16) - 40;
+      }
+      
+      // Engine load (mode 01, PID 04)
+      case '0104': {
+        if (dataOnly.length < 2) return hexData;
+        return parseInt(dataOnly.substring(0, 2), 16) * 100 / 255;
+      }
+      
+      // Throttle position (mode 01, PID 11)
+      case '0111': {
+        if (dataOnly.length < 2) return hexData;
+        return parseInt(dataOnly.substring(0, 2), 16) * 100 / 255;
+      }
+      
+      // Fuel level (mode 01, PID 2F)
+      case '012F': {
+        if (dataOnly.length < 2) return hexData;
+        return parseInt(dataOnly.substring(0, 2), 16) * 100 / 255;
+      }
+      
+      // Default: return the original response if not a known PID
+      default:
+        return hexData;
+    }
+  } catch (error) {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.DATA_ERROR,
+      `Failed to parse OBD data: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+};
+
+/**
+ * Extract hex data from response
+ * @param response OBD response
+ * @returns Hex data string or null if not valid
+ */
+export const extractHexData = (response: string): string | null => {
+  // Remove all non-hex characters
+  const hexOnly = response.replace(/[^0-9A-Fa-f]/g, '');
+  return hexOnly.length > 0 ? hexOnly : null;
+};
+
+/**
+ * Convert hex string to decimal value
+ * @param hex Hex string
+ * @returns Decimal value
+ */
+export const hexToDecimal = (hex: string): number => {
+  if (!hex || !/^[0-9A-Fa-f]+$/.test(hex)) {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.INVALID_PARAMETER,
+      'Invalid hex string'
+    );
+  }
+  return parseInt(hex, 16);
+};
+
+/**
+ * Convert hex string to binary string
+ * @param hex Hex string
+ * @returns Binary string
+ */
+export const hexToBinary = (hex: string): string => {
+  if (!hex || !/^[0-9A-Fa-f]+$/.test(hex)) {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.INVALID_PARAMETER,
+      'Invalid hex string'
+    );
+  }
+  return parseInt(hex, 16).toString(2).padStart(hex.length * 4, '0');
 };
 
 /**
@@ -51,6 +259,12 @@ export const isErrorResponse = (response: string): boolean => {
  * Add carriage return to command if needed
  */
 export const formatCommand = (command: string): string => {
+  if (typeof command !== 'string') {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.INVALID_PARAMETER,
+      'Command must be a string'
+    );
+  }
   return command.endsWith('\r') ? command : `${command}\r`;
 };
 
@@ -58,6 +272,13 @@ export const formatCommand = (command: string): string => {
  * Convert hex string to bytes (for raw command sending)
  */
 export const hexToBytes = (hex: string): number[] => {
+  if (!hex || !/^[0-9A-Fa-f]+$/.test(hex)) {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.INVALID_PARAMETER,
+      'Invalid hex string'
+    );
+  }
+
   const bytes: number[] = [];
   for (let i = 0; i < hex.length; i += 2) {
     bytes.push(parseInt(hex.substr(i, 2), 16));
@@ -69,6 +290,12 @@ export const hexToBytes = (hex: string): number[] => {
  * Convert bytes to hex string (for raw response parsing)
  */
 export const bytesToHex = (bytes: number[]): string => {
+  if (!Array.isArray(bytes)) {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.INVALID_PARAMETER,
+      'Input must be an array of numbers'
+    );
+  }
   return bytes.map(byte => byte.toString(16).padStart(2, '0')).join('');
 };
 
@@ -78,9 +305,15 @@ export const bytesToHex = (bytes: number[]): string => {
  * @returns The extracted hex value or null for invalid responses
  */
 export const extractValueFromResponse = (response: string): string | null => {
+  if (typeof response !== 'string') {
+    throw new BluetoothOBDError(
+      BluetoothErrorType.INVALID_PARAMETER,
+      'Response must be a string'
+    );
+  }
+
   // Handle error cases
-  if (response.includes('NO DATA') || response.includes('ERROR') || 
-      response.includes('UNABLE TO CONNECT')) {
+  if (isErrorResponse(response)) {
     return null;
   }
   
@@ -98,51 +331,15 @@ export const extractValueFromResponse = (response: string): string | null => {
 };
 
 /**
- * Parse OBD response into a numeric value
- * @param response The raw OBD response
- * @param command The command that was sent
- * @returns The parsed numeric value or null for invalid/unsupported responses
+ * Check if OBD device is connected by sending a test command
  */
-export const parseOBDResponse = (response: string, command: string): number | null => {
-  // Handle exact test cases directly
-  if (response === '41 0C 1A F8' && command === '010C') return 1724;
-  if (response === '41 0D 32' && command === '010D') return 50;
-  
-  // Extract the hex value
-  const hexValue = extractValueFromResponse(response);
-  if (hexValue === null) {
-    return null;
+export const testOBDConnection = async (
+  sendCommandFn: (cmd: string) => Promise<string>
+): Promise<boolean> => {
+  try {
+    const response = await sendCommandFn('ATZ');
+    return response.includes('ELM') || response.includes('OBD');
+  } catch (error) {
+    return false;
   }
-  
-  // Get the PID from the command
-  // PID is the second byte in the command (e.g., for "010C", the PID is "0C")
-  if (command.length < 4) {
-    return null;
-  }
-  const pid = command.substring(2, 4);
-  
-  // Convert based on PID
-  switch (pid.toUpperCase()) {
-    case '0C': // RPM
-      if (hexValue.length >= 2) {
-        const a = parseInt(hexValue.substring(0, 2), 16);
-        const b = hexValue.length >= 4 ? parseInt(hexValue.substring(2, 4), 16) : 0;
-        return ((a * 256) + b) / 4;
-      }
-      break;
-      
-    case '0D': // Vehicle Speed
-      if (hexValue.length >= 2) {
-        return parseInt(hexValue.substring(0, 2), 16);
-      }
-      break;
-      
-    case '05': // Engine Coolant Temperature
-      if (hexValue.length >= 2) {
-        return parseInt(hexValue.substring(0, 2), 16) - 40;
-      }
-      break;
-  }
-  
-  return null;
 };

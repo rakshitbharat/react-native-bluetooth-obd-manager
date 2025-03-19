@@ -1,39 +1,57 @@
-/**
- * ⚠️ IMPORTANT: This library requires proper setup of the following dependencies:
- * - react-native-ble-manager
- * - react-native-permissions
- * - Bluetooth permissions in iOS/Android
- *
- * Please ensure you have these configured in your React Native project before using this library.
- */
-
-// Core context and hooks
-import { BluetoothProvider } from './context/BluetoothContext';
+// Main entry point for React Native Bluetooth OBD Manager
 export { BluetoothProvider, useBluetooth } from './context/BluetoothContext';
 export { useOBDManager } from './hooks/useOBDManager';
 export { useDeviceDetection } from './hooks/useDeviceDetection';
 export { useECUCommands } from './hooks/useECUCommands';
+export { useOBDMonitoring } from './hooks/useOBDMonitoring';
 
-// Example components
-export { OBDDeviceScanner } from './examples/OBDDeviceScanner';
+// Export components
 export { OBDLiveData } from './examples/OBDLiveData';
+export { OBDDeviceScanner } from './examples/OBDDeviceScanner';
 export { OBDTerminal } from './examples/OBDTerminal';
+export { MinimalOBDExample } from './examples/MinimalOBDExample';
 
-// Types
-export type { ConnectionDetails, BluetoothState } from './types/bluetoothTypes';
-export { BluetoothActionType } from './types/bluetoothTypes';
+// Export utilities
+export * from './utils/obdUtils';
+export * from './utils/errorUtils';
+export * from './types/bluetoothTypes';
 
-// Managers
-export { default as OBDManager } from './managers/OBDManager';
-export { default as DeviceManager } from './managers/DeviceManager';
-export { ConnectionState, OBDEventType, OBDProtocol } from './managers/OBDManager';
+// Export device compatibility utilities
+export { default as DeviceCompatibilityManager } from './utils/deviceCompatibility';
+export { isOBDDevice, getCommonELM327Profile } from './utils/deviceCompatibility';
 
-// Utilities
-export { ELM_COMMANDS, STANDARD_PIDS } from './utils/obdUtils';
-export { findServiceAndCharacteristic } from './utils/deviceUtils';
-export { decodeData, encodeCommand, isResponseComplete, formatResponse } from './utils/dataUtils';
-export { logBluetoothError, BluetoothErrorType } from './utils/errorUtils';
-export { requestBluetoothPermissions, checkBluetoothState } from './utils/permissionUtils';
+// Export ECU connector
+export { ECUConnector, BluetoothECUConnector, createECUConnector } from './connectors/ECUConnector';
 
-// Export the BluetoothProvider as default for convenience
-export default BluetoothProvider;
+/**
+ * React Native Bluetooth OBD Manager
+ * 
+ * A comprehensive library for connecting to ELM327-based OBD-II adapters via Bluetooth in React Native apps.
+ * 
+ * Features:
+ * - Scan and connect to Bluetooth OBD-II adapters
+ * - Automatic service and characteristic detection
+ * - Simplified OBD command interface
+ * - Built-in support for common OBD-II PIDs
+ * - Read vehicle data (RPM, speed, temperature, etc.)
+ * - Read and clear diagnostic trouble codes
+ * - Device memory to reconnect to previous devices
+ * 
+ * Usage:
+ * 1. Wrap your app with the BluetoothProvider
+ * 2. Use the useOBDManager hook to interact with OBD devices
+ * 3. Use the provided components for quick implementation
+ * 
+ * Example:
+ * ```jsx
+ * import { BluetoothProvider, useOBDManager, OBDLiveData } from 'react-native-bluetooth-obd-manager';
+ * 
+ * const App = () => {
+ *   return (
+ *     <BluetoothProvider>
+ *       <OBDLiveData />
+ *     </BluetoothProvider>
+ *   );
+ * };
+ * ```
+ */

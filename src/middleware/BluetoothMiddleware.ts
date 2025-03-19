@@ -1,3 +1,5 @@
+import BleManager from 'react-native-ble-manager';
+
 import { ConnectionDetails } from '../types/bluetoothTypes';
 import { encodeCommand, isResponseComplete } from '../utils/dataUtils';
 import { findServiceAndCharacteristic } from '../utils/deviceUtils';
@@ -26,14 +28,14 @@ export class BluetoothMiddleware {
     return BluetoothMiddleware.instance;
   }
 
-  /**
-   * Find the optimal connection details for an OBD device
-   * Searches for compatible service and characteristics
-   */
   public async findOBDConnectionDetails(deviceId: string): Promise<ConnectionDetails | null> {
     try {
+      // First retrieve peripheral info with services
+      const BleManager = require('react-native-ble-manager').default;
+      const peripheralInfo = await BleManager.retrieveServices(deviceId);
+      
       // Leverage the device utils to find appropriate connection details
-      const connectionDetails = await findServiceAndCharacteristic(deviceId);
+      const connectionDetails = await findServiceAndCharacteristic(peripheralInfo);
       
       if (!connectionDetails) {
         console.error('Could not find compatible connection details for device');

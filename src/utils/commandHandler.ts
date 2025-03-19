@@ -1,20 +1,27 @@
-import { firstValueFrom, timer } from 'rxjs';
-import { filter, map, takeUntil } from 'rxjs/operators';
+import { Observable, firstValueFrom, race, Subject, timer } from 'rxjs';
+import { filter, take, timeout } from 'rxjs/operators';
 
-import { encodeCommand } from './dataUtils';
-import { BluetoothOBDError, BluetoothErrorType } from './errorUtils';
+import { BluetoothErrorType, BluetoothOBDError } from './errorUtils';
 import notificationHandler from './notificationHandler';
+import { isResponseComplete } from './dataUtils';
 
+// Default timeout in ms
+const DEFAULT_TIMEOUT = 5000;
 
-export class CommandHandler {
+/**
+ * CommandHandler manages sending commands to OBD devices
+ * and processing their responses with proper timeout handling.
+ */
+class CommandHandler {
   private static instance: CommandHandler;
-  private lastCommand: string | null = null;
-  private notificationHandler = notificationHandler;
-  private responseBuffer = '';
-  private readonly COMMAND_TIMEOUT = 4000; // 4 seconds
-
+  private commandQueue: Array<() => Promise<void>> = [];
+  private isProcessingCommand = false;
+  private currentCommandTimeout: NodeJS.Timeout | null = null;
+  private currentCommand: string | null = null;
+  private commandSubject: Subject<{command: string, response: string}> = new Subject();
+  
   private constructor() {
-    // No need to initialize notificationHandler here anymore
+    // Private constructor for singleton pattern
   }
 
   static getInstance(): CommandHandler {
@@ -24,100 +31,154 @@ export class CommandHandler {
     return CommandHandler.instance;
   }
 
+  /**
+   * Send a command to the device and wait for a response
+   * 
+   * @param command The command to send
+   * @param writeFn Function that performs the actual write to the device
+   * @param deviceId ID of the connected device
+   * @param timeoutMs Timeout in milliseconds
+   * @returns Promise that resolves to the device's response
+   */
   async sendCommand(
     command: string,
-    writeFn: (bytes: number[]) => Promise<void>,
+    writeFn: () => Promise<void>,
     deviceId: string,
-    timeoutMs: number = this.COMMAND_TIMEOUT,
+    timeoutMs: number = DEFAULT_TIMEOUT
   ): Promise<string> {
-    // Clear any existing response
-    this.responseBuffer = '';
-    this.lastCommand = command;
+    return new Promise<string>((resolve, reject) => {
+      const executeCommand = async () => {
+        try {
+          const response = await this.executeCommandWithTimeout(
+            command,
+            writeFn,
+            deviceId,
+            timeoutMs
+          );
+          resolve(response);
+        } catch (error) {
+          reject(error);
+        } finally {
+          this.processNextCommand();
+        }
+      };
 
-    // Prepare command bytes
-    const cmdWithCR = command.endsWith('\r') ? command : `${command}\r`;
-    const bytes = encodeCommand(cmdWithCR);
+      // Add the command to the queue
+      this.commandQueue.push(executeCommand);
+      
+      // If this is the only command, process it immediately
+      if (this.commandQueue.length === 1 && !this.isProcessingCommand) {
+        this.processNextCommand();
+      }
+    });
+  }
 
+  /**
+   * Process the next command in the queue
+   */
+  private async processNextCommand(): Promise<void> {
+    if (this.commandQueue.length === 0 || this.isProcessingCommand) {
+      return;
+    }
+
+    this.isProcessingCommand = true;
+    const nextCommand = this.commandQueue.shift();
+
+    if (nextCommand) {
+      await nextCommand();
+    }
+
+    this.isProcessingCommand = false;
+
+    // If there are more commands, process the next one
+    if (this.commandQueue.length > 0) {
+      this.processNextCommand();
+    }
+  }
+
+  /**
+   * Execute a command with timeout handling
+   */
+  private async executeCommandWithTimeout(
+    command: string,
+    writeFn: () => Promise<void>,
+    deviceId: string,
+    timeoutMs: number
+  ): Promise<string> {
+    this.currentCommand = command;
+    this.clearTimeout();
     try {
-      // Setup response stream with timeout
-      const responsePromise = firstValueFrom(
-        this.notificationHandler.getCompleteResponseStream(deviceId).pipe(
-          map(response => {
-            this.responseBuffer += response;
-            if (this.isResponseComplete(this.responseBuffer)) {
-              return this.cleanResponse(this.responseBuffer);
-            }
-            throw new Error('Incomplete response');
-          }),
-          filter(response => !!response),
-          takeUntil(timer(timeoutMs)),
-        ),
+      // Get response stream for this device
+      const responseStream = notificationHandler
+        .getCompleteResponseStream(deviceId)
+        .pipe(
+          filter(response => isResponseComplete(response)),
+          take(1)
+        );
+      // Create a timeout stream
+      const timeoutError = new BluetoothOBDError(
+        BluetoothErrorType.TIMEOUT_ERROR,
+        `Command "${command}" timed out after ${timeoutMs}ms`
       );
-
-      // Send command
-      await writeFn(bytes);
-
-      // Wait for response or timeout
-      const response = await Promise.race([
-        responsePromise,
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () =>
-              reject(
-                new BluetoothOBDError(
-                  BluetoothErrorType.TIMEOUT_ERROR,
-                  `Command ${command} timed out after ${timeoutMs}ms`,
-                ),
-              ),
-            timeoutMs,
-          ),
-        ),
-      ]);
-
-      return response;
+      
+      // Send the command
+      await writeFn();
+      
+      // Race between response and timeout - ensure we always return a string
+      const response = await firstValueFrom(
+        responseStream.pipe(timeout({ 
+          first: timeoutMs, 
+          with: () => timer(0).pipe(
+            take(1),
+            filter(() => {
+              throw timeoutError;
+            })
+          )
+        }))
+      );
+      
+      // Make sure we return a string
+      return response !== 0 ? response : '';
     } catch (error) {
       if (error instanceof BluetoothOBDError) {
         throw error;
       }
+      
       throw new BluetoothOBDError(
         BluetoothErrorType.WRITE_ERROR,
-        `Failed to send command ${command}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Failed to execute command: ${error instanceof Error ? error.message : String(error)}`
       );
+    } finally {
+      this.clearTimeout();
+      this.currentCommand = null;
     }
   }
 
-  private isResponseComplete(response: string): boolean {
-    // Response is complete if it contains '>' prompt
-    // or if it's a known complete response (like "OK" or "NO DATA")
-    return (
-      response.includes('>') ||
-      response.includes('OK') ||
-      response.includes('NO DATA') ||
-      response.includes('ERROR')
-    );
-  }
-
-  private cleanResponse(response: string): string {
-    // Remove command echo if present
-    if (this.lastCommand) {
-      response = response.replace(this.lastCommand, '');
+  /**
+   * Clear any active timeout
+   */
+  private clearTimeout(): void {
+    if (this.currentCommandTimeout) {
+      clearTimeout(this.currentCommandTimeout);
+      this.currentCommandTimeout = null;
     }
-
-    // Remove prompt character
-    response = response.replace('>', '');
-
-    // Remove carriage returns and line feeds
-    response = response.replace(/[\r\n]/g, '');
-
-    // Remove any remaining whitespace
-    return response.trim();
   }
 
+  /**
+   * Reset command handler state
+   */
   reset(): void {
-    this.lastCommand = null;
-    this.responseBuffer = '';
+    this.clearTimeout();
+    this.commandQueue = [];
+    this.isProcessingCommand = false;
+    this.currentCommand = null;
+  }
+
+  /**
+   * Get an observable of command-response pairs
+   */
+  getCommandStream(): Observable<{command: string, response: string}> {
+    return this.commandSubject.asObservable();
   }
 }
 

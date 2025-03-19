@@ -1,60 +1,46 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Peripheral } from 'react-native-ble-manager';
 
-import { ConnectionDetails } from '../types/bluetoothTypes';
+import { BluetoothState } from '../types/bluetoothTypes';
 
-const STORAGE_PREFIX = '@OBDManager:';
+// Storage keys
 const KEYS = {
-  BLUETOOTH_STATE: `${STORAGE_PREFIX}bluetooth_state`,
-  LAST_DEVICE: `${STORAGE_PREFIX}last_device`,
-  CONNECTION_DETAILS: `${STORAGE_PREFIX}connection_details`,
-  DEVICE_PREFERENCES: `${STORAGE_PREFIX}device_preferences`,
+  BLUETOOTH_STATE: '@OBDManager:bluetoothState',
+  LAST_DEVICE: '@OBDManager:lastDevice',
+  DEVICE_HISTORY: '@OBDManager:deviceHistory',
 };
 
-interface DevicePreferences {
-  writeWithResponse: boolean;
-  autoInitialize: boolean;
-  useCustomService?: string;
-  useCustomCharacteristic?: string;
-}
-
-export interface StoredDeviceState {
-  id: string;
-  name: string;
-  connectionDetails: ConnectionDetails;
-  preferences: DevicePreferences;
-  lastConnected: number;
-}
-
-interface SerializableBluetoothState {
+// Type definitions for serializable states
+export interface SerializableBluetoothState {
   isBluetoothOn: boolean;
   hasPermissions: boolean;
-  discoveredDevices: Array<{
+  discoveredDevices?: Array<{
     id: string;
     name: string;
-    rssi: number;
+    rssi?: number;
   }>;
-}
-
-interface BluetoothState {
-  isBluetoothOn: boolean;
-  hasPermissions: boolean;
-  discoveredDevices: Peripheral[];
+  lastConnectedDeviceId?: string;
 }
 
 /**
- * Save full Bluetooth state including device preferences
+ * Save Bluetooth state to persistent storage
+ * @param state Current Bluetooth state
  */
 export const saveBluetoothState = async (state: BluetoothState): Promise<void> => {
   try {
+    // Create a serializable version of the state
     const serializableState: SerializableBluetoothState = {
-      isBluetoothOn: state.isBluetoothOn,
-      hasPermissions: state.hasPermissions,
+      // Set default values for optional properties
+      isBluetoothOn: state.isBluetoothOn ?? false,
+      hasPermissions: state.hasPermissions ?? false,
       discoveredDevices: state.discoveredDevices?.map(d => ({
         id: d.id,
         name: d.name || 'Unknown Device',
         rssi: d.rssi || 0,
       })) || [],
+      lastConnectedDeviceId: state.connectedDevice?.id,
     };
+    
     await AsyncStorage.setItem(KEYS.BLUETOOTH_STATE, JSON.stringify(serializableState));
   } catch (error) {
     console.error('Failed to save Bluetooth state:', error);
@@ -63,6 +49,7 @@ export const saveBluetoothState = async (state: BluetoothState): Promise<void> =
 
 /**
  * Load Bluetooth state from persistent storage
+ * @returns Serialized Bluetooth state or null if none exists
  */
 export const loadBluetoothState = async (): Promise<SerializableBluetoothState | null> => {
   try {
@@ -89,7 +76,7 @@ export const clearBluetoothState = async (): Promise<void> => {
 };
 
 /**
- * Save the last connected device
+ * Save the last connected device ID
  */
 export const saveLastConnectedDevice = async (deviceId: string): Promise<void> => {
   try {
@@ -100,7 +87,8 @@ export const saveLastConnectedDevice = async (deviceId: string): Promise<void> =
 };
 
 /**
- * Get the last connected device
+ * Get the last connected device ID
+ * @returns Device ID or null if none saved
  */
 export const getLastConnectedDevice = async (): Promise<string | null> => {
   try {
@@ -112,121 +100,132 @@ export const getLastConnectedDevice = async (): Promise<string | null> => {
 };
 
 /**
- * Save device connection details and preferences
+ * Clear the last connected device
  */
-export const saveDeviceState = async (deviceState: StoredDeviceState): Promise<void> => {
+export const clearLastConnectedDevice = async (): Promise<void> => {
   try {
-    const key = `${KEYS.CONNECTION_DETAILS}:${deviceState.id}`;
-    await AsyncStorage.setItem(key, JSON.stringify(deviceState));
-
-    // Update last connected device
-    await AsyncStorage.setItem(KEYS.LAST_DEVICE, deviceState.id);
+    await AsyncStorage.removeItem(KEYS.LAST_DEVICE);
   } catch (error) {
-    console.error('Failed to save device state:', error);
+    console.error('Failed to clear last connected device:', error);
   }
 };
 
+// Device history
+
+export interface DeviceHistoryEntry {
+  id: string;
+  name: string;
+  lastConnected: number; // timestamp
+  connectionSuccessCount: number;
+  isOBDDevice: boolean;
+}
+
 /**
- * Load device connection details and preferences
+ * Save device to history
  */
-export const loadDeviceState = async (deviceId: string): Promise<StoredDeviceState | null> => {
+export const addDeviceToHistory = async (
+  device: Peripheral, 
+  isOBDDevice = true
+): Promise<void> => {
   try {
-    const key = `${KEYS.CONNECTION_DETAILS}:${deviceId}`;
-    const stateJson = await AsyncStorage.getItem(key);
-    if (stateJson) {
-      return JSON.parse(stateJson);
+    const history = await getDeviceHistory();
+    
+    // Find if device already exists
+    const index = history.findIndex(d => d.id === device.id);
+    
+    if (index >= 0) {
+      // Update existing entry
+      history[index] = {
+        ...history[index],
+        name: device.name || history[index].name,
+        lastConnected: Date.now(),
+        connectionSuccessCount: (history[index].connectionSuccessCount || 0) + 1,
+        isOBDDevice,
+      };
+    } else {
+      // Add new entry
+      history.push({
+        id: device.id,
+        name: device.name || 'Unknown Device',
+        lastConnected: Date.now(),
+        connectionSuccessCount: 1,
+        isOBDDevice,
+      });
     }
-    return null;
+    
+    // Save updated history
+    await AsyncStorage.setItem(KEYS.DEVICE_HISTORY, JSON.stringify(history));
   } catch (error) {
-    console.error('Failed to load device state:', error);
-    return null;
+    console.error('Failed to add device to history:', error);
   }
 };
 
 /**
- * Load all known device states
+ * Get device history
  */
-export const loadAllDeviceStates = async (): Promise<StoredDeviceState[]> => {
+export const getDeviceHistory = async (): Promise<DeviceHistoryEntry[]> => {
   try {
-    const keys = await AsyncStorage.getAllKeys();
-    const deviceKeys = keys.filter(key => key.startsWith(`${KEYS.CONNECTION_DETAILS}:`));
-
-    const states = await Promise.all(
-      deviceKeys.map(async key => {
-        const json = await AsyncStorage.getItem(key);
-        return json ? JSON.parse(json) : null;
-      }),
-    );
-
-    return states.filter((state): state is StoredDeviceState => !!state);
+    const historyJson = await AsyncStorage.getItem(KEYS.DEVICE_HISTORY);
+    if (historyJson) {
+      return JSON.parse(historyJson);
+    }
+    return [];
   } catch (error) {
-    console.error('Failed to load all device states:', error);
+    console.error('Failed to get device history:', error);
     return [];
   }
 };
 
 /**
- * Save device preferences
+ * Clear device history
  */
-export const saveDevicePreferences = async (
-  deviceId: string,
-  preferences: DevicePreferences,
-): Promise<void> => {
+export const clearDeviceHistory = async (): Promise<void> => {
   try {
-    const key = `${KEYS.DEVICE_PREFERENCES}:${deviceId}`;
-    await AsyncStorage.setItem(key, JSON.stringify(preferences));
+    await AsyncStorage.removeItem(KEYS.DEVICE_HISTORY);
   } catch (error) {
-    console.error('Failed to save device preferences:', error);
+    console.error('Failed to clear device history:', error);
   }
 };
 
 /**
- * Load device preferences
+ * Find device in history by ID
  */
-export const loadDevicePreferences = async (
-  deviceId: string,
-): Promise<DevicePreferences | null> => {
+export const findDeviceInHistory = async (deviceId: string): Promise<DeviceHistoryEntry | null> => {
   try {
-    const key = `${KEYS.DEVICE_PREFERENCES}:${deviceId}`;
-    const json = await AsyncStorage.getItem(key);
-    return json ? JSON.parse(json) : null;
+    const history = await getDeviceHistory();
+    return history.find(d => d.id === deviceId) || null;
   } catch (error) {
-    console.error('Failed to load device preferences:', error);
+    console.error('Failed to find device in history:', error);
     return null;
   }
 };
 
 /**
- * Clear all stored data for a specific device
+ * Remove a device from history
  */
-export const clearDeviceData = async (deviceId: string): Promise<void> => {
+export const removeDeviceFromHistory = async (deviceId: string): Promise<void> => {
   try {
-    const keys = [
-      `${KEYS.CONNECTION_DETAILS}:${deviceId}`,
-      `${KEYS.DEVICE_PREFERENCES}:${deviceId}`,
-    ];
-
-    await Promise.all(keys.map(key => AsyncStorage.removeItem(key)));
-
-    // If this was the last connected device, clear that too
-    const lastDevice = await AsyncStorage.getItem(KEYS.LAST_DEVICE);
-    if (lastDevice === deviceId) {
-      await AsyncStorage.removeItem(KEYS.LAST_DEVICE);
-    }
+    const history = await getDeviceHistory();
+    const filteredHistory = history.filter(d => d.id !== deviceId);
+    await AsyncStorage.setItem(KEYS.DEVICE_HISTORY, JSON.stringify(filteredHistory));
   } catch (error) {
-    console.error('Failed to clear device data:', error);
+    console.error('Failed to remove device from history:', error);
   }
 };
 
 /**
- * Clear all stored data
+ * Get most recently connected devices
  */
-export const clearAllData = async (): Promise<void> => {
+export const getRecentDevices = async (limit = 5): Promise<DeviceHistoryEntry[]> => {
   try {
-    const keys = await AsyncStorage.getAllKeys();
-    const obdKeys = keys.filter(key => key.startsWith(STORAGE_PREFIX));
-    await AsyncStorage.multiRemove(obdKeys);
+    const history = await getDeviceHistory();
+    
+    // Sort by last connected timestamp (newest first) and take the most recent ones
+    return history
+      .sort((a, b) => b.lastConnected - a.lastConnected)
+      .slice(0, limit);
   } catch (error) {
-    console.error('Failed to clear all data:', error);
+    console.error('Failed to get recent devices:', error);
+    return [];
   }
 };

@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 
 import { useBluetooth } from '../context/BluetoothContext';
 
-export const MinimalOBDExample: React.FC = () => {
+const MinimalOBDExampleComponent: React.FC = () => {
   const {
     isBluetoothOn,
     hasPermissions,
@@ -219,3 +219,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 });
+
+export const MinimalOBDExample = MinimalOBDExampleComponent;

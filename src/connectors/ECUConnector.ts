@@ -1,5 +1,7 @@
+import BleManager from 'react-native-ble-manager';
 import { BluetoothContext } from '../context/BluetoothContext';
-import { decodeData, formatResponse, isResponseComplete } from '../utils/dataUtils';
+import { BluetoothContextValue } from '../types/bluetoothTypes';
+import { decodeData, encodeCommand, formatResponse, isResponseComplete } from '../utils/dataUtils';
 import { BluetoothErrorType, BluetoothOBDError } from '../utils/errorUtils';
 
 /**
@@ -15,7 +17,7 @@ export interface IECUConnector {
  * ECU Connector class for interacting with OBD devices
  */
 export class ECUConnector {
-  private context: BluetoothContext | null = null;
+  private context: BluetoothContextValue | null = null;
   private deviceId: string | null = null;
   private responseTimeout = 4000; // Default timeout in ms
   private isInitialized = false;
@@ -27,7 +29,7 @@ export class ECUConnector {
   /**
    * Set Bluetooth context to use for communication
    */
-  setContext(context: BluetoothContext): void {
+  setContext(context: BluetoothContextValue): void {
     this.context = context;
     this.isInitialized = true;
   }
