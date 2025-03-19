@@ -35,7 +35,9 @@ declare module 'react-native' {
   export const Alert: any;
   export const FlatList: React.ComponentType<any>;
   export const ActivityIndicator: React.ComponentType<any>;
-  export const ScrollView: React.ComponentType<any>;
+  export const ScrollView: React.ComponentClass<any> & {
+    scrollToEnd: (options?: { animated?: boolean }) => void;
+  };
   export const TextInput: React.ComponentType<any>;
   export const KeyboardAvoidingView: React.ComponentType<any>;
   export const NativeEventEmitter: any;
