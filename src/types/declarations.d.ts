@@ -27,6 +27,18 @@ declare module 'react-native' {
     isTV?: boolean;
     select<T>(spec: { ios?: T; android?: T; native?: T; default?: T }): T;
   };
+
+  export const View: React.ComponentType<any>;
+  export const Text: React.ComponentType<any>;
+  export const TouchableOpacity: React.ComponentType<any>;
+  export const StyleSheet: any;
+  export const Alert: any;
+  export const FlatList: React.ComponentType<any>;
+  export const ActivityIndicator: React.ComponentType<any>;
+  export const ScrollView: React.ComponentType<any>;
+  export const TextInput: React.ComponentType<any>;
+  export const KeyboardAvoidingView: React.ComponentType<any>;
+  export const NativeEventEmitter: any;
 }
 
 declare module 'react-native-ble-manager' {
@@ -37,47 +49,60 @@ declare module 'react-native-ble-manager' {
 
   export interface Characteristic {
     uuid: string;
-    serviceUUID: string;
-    deviceID: string;
     properties: {
-      Write?: boolean;
+      Broadcast?: boolean;
       Read?: boolean;
       WriteWithoutResponse?: boolean;
+      Write?: boolean;
       Notify?: boolean;
       Indicate?: boolean;
+      AuthenticatedSignedWrites?: boolean;
+      ExtendedProperties?: boolean;
+      NotifyEncryptionRequired?: boolean;
+      IndicateEncryptionRequired?: boolean;
     };
+    descriptors?: Descriptor[];
   }
 
   export interface Peripheral {
     id: string;
     name?: string;
     rssi?: number;
-    advertising?: {
+    advertising: {
       isConnectable?: boolean;
       manufacturerData?: string;
+      serviceData?: Record<string, string>;
       serviceUUIDs?: string[];
+      txPowerLevel?: number;
+      localName?: string;
     };
+    characteristics?: Characteristic[];
     services?: Service[];
   }
 
+  export interface Descriptor {
+    uuid: string;
+  }
+
   interface BleManagerModule {
-    start(options?: { showAlert?: boolean }): Promise<void>;
-    stop(): Promise<void>;
+    start(options?: any): Promise<void>;
     scan(serviceUUIDs: string[], seconds: number, allowDuplicates?: boolean): Promise<void>;
     stopScan(): Promise<void>;
     connect(peripheralId: string): Promise<void>;
     disconnect(peripheralId: string): Promise<void>;
     retrieveServices(peripheralId: string): Promise<Peripheral>;
     retrieveCharacteristics(peripheralId: string, serviceUUID: string): Promise<Characteristic[]>;
-    startNotification(
+    write(
       peripheralId: string,
       serviceUUID: string,
       characteristicUUID: string,
+      data: number[],
     ): Promise<void>;
-    stopNotification(
+    writeWithoutResponse(
       peripheralId: string,
       serviceUUID: string,
       characteristicUUID: string,
+      data: number[],
     ): Promise<void>;
     write(
       peripheralId: string,

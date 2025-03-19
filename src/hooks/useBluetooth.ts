@@ -1,6 +1,6 @@
 import { useContext } from 'react';
 
-import BluetoothContext from '../context/BluetoothContext';
+import { BluetoothContext } from '../context/BluetoothContext';
 import { BluetoothContextValue, BluetoothState } from '../types/bluetoothTypes';
 import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
 
@@ -8,7 +8,7 @@ import { BluetoothOBDError, BluetoothErrorType } from '../utils/errorUtils';
  * Custom hook for accessing the BluetoothContext
  * This provides properly typed access to the Bluetooth functionality
  */
-export const useBluetooth = (): BluetoothContextValue => {
+const useBluetooth = (): BluetoothContextValue => {
   // Get the context
   const bluetoothState = useContext(BluetoothContext);
 

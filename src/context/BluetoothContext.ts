@@ -1,6 +1,7 @@
 import { createContext } from 'react';
 
 import { BluetoothState } from '../types/bluetoothTypes';
+import useBluetooth from '../hooks/useBluetooth';
 
 // Initialize with default values
 const initialState: BluetoothState = {
@@ -22,5 +23,5 @@ const initialState: BluetoothState = {
 const BluetoothContext = createContext<BluetoothState>(initialState);
 
 // Export just the context, all implementation is in BluetoothContext.tsx
-export { BluetoothContext };
+export { BluetoothContext, useBluetooth };
 export default BluetoothContext;
