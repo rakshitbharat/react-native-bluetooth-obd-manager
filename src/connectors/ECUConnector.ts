@@ -172,15 +172,31 @@ export class BluetoothECUConnector implements IECUConnector {
         );
       }
 
-      // Get characteristics to verify
-      const characteristics = await BleManager.retrieveCharacteristics(
-        this.deviceId,
-        this.serviceUUID,
+      // Get all services and characteristics in one call
+      const peripheralInfo = await BleManager.retrieveServices(this.deviceId);
+
+      if (!peripheralInfo.characteristics) {
+        throw new BluetoothOBDError(
+          BluetoothErrorType.SERVICE_ERROR,
+          `No characteristics found for device ${this.deviceId}`,
+        );
+      }
+
+      // Filter characteristics for our service
+      const serviceCharacteristics = peripheralInfo.characteristics.filter(
+        (char: any) => char.service === this.serviceUUID || char.serviceUUID === this.serviceUUID,
       );
-      const notifyCharExists = characteristics.some(
-        char => char.uuid === this.notifyCharacteristic,
+
+      const notifyCharExists = serviceCharacteristics.some(
+        (char: any) =>
+          char.uuid === this.notifyCharacteristic ||
+          char.characteristic === this.notifyCharacteristic,
       );
-      const writeCharExists = characteristics.some(char => char.uuid === this.writeCharacteristic);
+      const writeCharExists = serviceCharacteristics.some(
+        (char: any) =>
+          char.uuid === this.writeCharacteristic ||
+          char.characteristic === this.writeCharacteristic,
+      );
 
       if (!notifyCharExists) {
         throw new BluetoothOBDError(
@@ -394,6 +410,58 @@ export class BluetoothECUConnector implements IECUConnector {
     if (this.timeoutId !== null) {
       clearTimeout(this.timeoutId);
       this.timeoutId = null;
+    }
+  }
+
+  /**
+   * Ensure service and characteristics exist
+   */
+  private async checkServiceAndCharacteristics(): Promise<boolean> {
+    // Check service UUID
+    if (!this.serviceUUID) {
+      throw new BluetoothOBDError(BluetoothErrorType.SERVICE_ERROR, 'Missing OBD service UUID');
+    }
+
+    // First check if the device is connected
+    const isConnected = await BleManager.isPeripheralConnected(this.deviceId, [this.serviceUUID]);
+
+    if (!isConnected) {
+      throw new BluetoothOBDError(BluetoothErrorType.CONNECTION_ERROR, 'Device is not connected');
+    }
+
+    try {
+      // Get all services and their characteristics in one call
+      const peripheralInfo = await BleManager.retrieveServices(this.deviceId);
+
+      if (!peripheralInfo.services || !peripheralInfo.characteristics) {
+        return false;
+      }
+
+      // Find our service
+      const service = peripheralInfo.services.find(svc => svc.uuid === this.serviceUUID);
+      if (!service) {
+        return false;
+      }
+
+      // Get characteristics for our service from the full peripheral info
+      const characteristics = peripheralInfo.characteristics.filter(
+        char => char.serviceUUID === this.serviceUUID,
+      );
+
+      // Check if notification characteristic exists
+      const notifyCharExists = characteristics.some(
+        (char: any) => char.uuid === this.notifyCharacteristic,
+      );
+
+      // Check if write characteristic exists
+      const writeCharExists = characteristics.some(
+        (char: any) => char.uuid === this.writeCharacteristic,
+      );
+
+      return notifyCharExists && writeCharExists;
+    } catch (error) {
+      console.warn('Error checking characteristics:', error);
+      return false;
     }
   }
 }

@@ -1,5 +1,7 @@
 // Main entry point for React Native Bluetooth OBD Manager
-export { BluetoothProvider, useBluetooth } from './context/BluetoothContext';
+import { BluetoothProvider as BluetoothProviderComponent } from './context/BluetoothContext';
+export { useBluetooth } from './context/BluetoothContext';
+export const BluetoothProvider = BluetoothProviderComponent;
 export { useOBDManager } from './hooks/useOBDManager';
 export { useDeviceDetection } from './hooks/useDeviceDetection';
 export { useECUCommands } from './hooks/useECUCommands';
@@ -25,9 +27,9 @@ export { ECUConnector, BluetoothECUConnector, createECUConnector } from './conne
 
 /**
  * React Native Bluetooth OBD Manager
- * 
+ *
  * A comprehensive library for connecting to ELM327-based OBD-II adapters via Bluetooth in React Native apps.
- * 
+ *
  * Features:
  * - Scan and connect to Bluetooth OBD-II adapters
  * - Automatic service and characteristic detection
@@ -36,16 +38,16 @@ export { ECUConnector, BluetoothECUConnector, createECUConnector } from './conne
  * - Read vehicle data (RPM, speed, temperature, etc.)
  * - Read and clear diagnostic trouble codes
  * - Device memory to reconnect to previous devices
- * 
+ *
  * Usage:
  * 1. Wrap your app with the BluetoothProvider
  * 2. Use the useOBDManager hook to interact with OBD devices
  * 3. Use the provided components for quick implementation
- * 
+ *
  * Example:
  * ```jsx
  * import { BluetoothProvider, useOBDManager, OBDLiveData } from 'react-native-bluetooth-obd-manager';
- * 
+ *
  * const App = () => {
  *   return (
  *     <BluetoothProvider>

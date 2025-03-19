@@ -209,10 +209,15 @@ export class DeviceManager {
 
       // Find the first available service and characteristic for writing
       const service = peripheral.services[0];
-      const characteristics = await BleManager.retrieveCharacteristics(deviceId, service.uuid);
+
+      // Filter characteristics for this service
+      const characteristics =
+        peripheral.characteristics?.filter(
+          (c: any) => c.service === service.uuid || c.serviceUUID === service.uuid,
+        ) || [];
 
       const writableCharacteristic = characteristics.find(
-        (c: Characteristic) => c.properties.Write || c.properties.WriteWithoutResponse,
+        (c: any) => c.properties?.Write || c.properties?.WriteWithoutResponse,
       );
 
       if (!writableCharacteristic) {
