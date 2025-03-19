@@ -41,6 +41,17 @@ declare module 'react-native' {
       ): Promise<void>;
       getState(): Promise<string>;
       enableBluetooth(): Promise<boolean>;
+      startNotification(
+        peripheralId: string,
+        serviceUUID: string,
+        characteristicUUID: string,
+      ): Promise<void>;
+      stopNotification(
+        peripheralId: string,
+        serviceUUID: string,
+        characteristicUUID: string,
+      ): Promise<void>;
+      retrieveServices(peripheralId: string): Promise<Peripheral>;
     };
   }
 
@@ -69,42 +80,33 @@ declare module 'react-native' {
 }
 
 declare module 'react-native-ble-manager' {
-  export interface Service {
-    uuid: string;
-    isPrimary?: boolean;
-  }
-
   export interface Characteristic {
     uuid: string;
+    serviceUUID: string;
     properties: {
-      Broadcast?: boolean;
-      Read?: boolean;
-      WriteWithoutResponse?: boolean;
-      Write?: boolean;
-      Notify?: boolean;
-      Indicate?: boolean;
-      AuthenticatedSignedWrites?: boolean;
-      ExtendedProperties?: boolean;
-      NotifyEncryptionRequired?: boolean;
-      IndicateEncryptionRequired?: boolean;
+      Write: boolean;
+      WriteWithoutResponse: boolean;
+      Read: boolean;
+      Notify: boolean;
+      Indicate: boolean;
+      Broadcast: boolean;
+      AuthenticatedSignedWrites: boolean;
+      ExtendedProperties: boolean;
+      NotifyEncryptionRequired: boolean;
+      IndicateEncryptionRequired: boolean;
     };
-    descriptors?: Descriptor[];
+  }
+
+  export interface Service {
+    uuid: string;
+    isPrimary: boolean;
   }
 
   export interface Peripheral {
     id: string;
-    name?: string;
-    rssi?: number;
-    advertising: {
-      isConnectable?: boolean;
-      manufacturerData?: string;
-      serviceData?: Record<string, string>;
-      serviceUUIDs?: string[];
-      txPowerLevel?: number;
-      localName?: string;
-    };
-    characteristics?: Characteristic[];
-    services?: Service[];
+    name: string;
+    services: Service[];
+    characteristics: Characteristic[];
   }
 
   export interface Descriptor {

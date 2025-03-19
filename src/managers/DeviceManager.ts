@@ -233,7 +233,7 @@ export class DeviceManager {
       return {
         serviceUUID: service.uuid,
         characteristicUUID: writableCharacteristic.uuid,
-        writeWithResponse: writableCharacteristic.properties.Write || false,
+        writeWithResponse: Boolean(writableCharacteristic.properties.Write),
         mtu: undefined, // Optional MTU size
       };
     } catch (error) {
