@@ -11,8 +11,8 @@ import {
 } from 'react-native';
 
 import useBluetooth from '../hooks/useBluetooth';
-import { ELM_COMMANDS } from '../utils/obdUtils';
 import { ScrollViewMethod } from '../types/declarations';
+import { ELM_COMMANDS } from '../utils/obdUtils';
 
 interface LogEntry {
   type: 'sent' | 'received' | 'error' | 'info';
