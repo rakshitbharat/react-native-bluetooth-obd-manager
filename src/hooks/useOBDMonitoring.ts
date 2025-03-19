@@ -59,7 +59,7 @@ export const useOBDMonitoring = (
   const [isMonitoring, setIsMonitoring] = useState<boolean>(false);
   const [data, setData] = useState<MonitoredData>(INITIAL_DATA);
 
-  const { isInitialized, sendCommand } = useOBDManager();
+  const obd = useOBDManager();
   const monitoringIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const monitoringShouldStop = useRef<boolean>(false);
 
@@ -77,7 +77,7 @@ export const useOBDMonitoring = (
 
   // Start monitoring
   const startMonitoring = useCallback((): boolean => {
-    if (!isInitialized) {
+    if (!obd || !obd.isConnected) {
       console.error('Cannot start monitoring - OBD not initialized');
       return false;
     }
@@ -103,7 +103,7 @@ export const useOBDMonitoring = (
 
         if (enabledPids.includes('rpm')) {
           updatePromises.push(
-            sendCommand(STANDARD_PIDS.ENGINE_RPM).then(rpmResponse => {
+            obd.sendCommand(STANDARD_PIDS.ENGINE_RPM.pid).then(rpmResponse => {
               const rpm = parseEngineRPM(rpmResponse);
               setData(prev => ({
                 ...prev,
@@ -116,7 +116,7 @@ export const useOBDMonitoring = (
 
         if (enabledPids.includes('speed')) {
           updatePromises.push(
-            sendCommand(STANDARD_PIDS.VEHICLE_SPEED).then(speedResponse => {
+            obd.sendCommand(STANDARD_PIDS.VEHICLE_SPEED.pid).then(speedResponse => {
               const speed = parseVehicleSpeed(speedResponse);
               setData(prev => ({
                 ...prev,
@@ -129,7 +129,7 @@ export const useOBDMonitoring = (
 
         if (enabledPids.includes('coolantTemp')) {
           updatePromises.push(
-            sendCommand(STANDARD_PIDS.ENGINE_COOLANT_TEMP).then(tempResponse => {
+            obd.sendCommand(STANDARD_PIDS.ENGINE_COOLANT_TEMP.pid).then(tempResponse => {
               const temp = parseEngineCoolantTemp(tempResponse);
               setData(prev => ({
                 ...prev,
@@ -142,7 +142,7 @@ export const useOBDMonitoring = (
 
         if (enabledPids.includes('throttlePosition')) {
           updatePromises.push(
-            sendCommand(STANDARD_PIDS.THROTTLE_POSITION).then(throttleResponse => {
+            obd.sendCommand(STANDARD_PIDS.THROTTLE_POSITION.pid).then(throttleResponse => {
               const throttle = parseThrottlePosition(throttleResponse);
               setData(prev => ({
                 ...prev,
@@ -172,7 +172,7 @@ export const useOBDMonitoring = (
     // Start the loop
     void monitoringLoop();
     return true;
-  }, [isInitialized, isMonitoring, enabledPids, refreshRate, sendCommand, stopMonitoring]);
+  }, [isMonitoring, enabledPids, refreshRate, obd, stopMonitoring]);
 
   // Clean up on unmount
   useEffect(() => {
