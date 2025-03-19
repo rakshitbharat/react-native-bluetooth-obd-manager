@@ -710,6 +710,9 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   );
 };
 
+// Export the provider as default
+export default BluetoothProvider;
+
 // Custom hook to use the Bluetooth context
 export const useBluetooth = () => {
   const context = useContext(BluetoothContext);
