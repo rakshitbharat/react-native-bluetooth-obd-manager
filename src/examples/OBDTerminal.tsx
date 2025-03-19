@@ -10,7 +10,7 @@ import {
   Platform,
 } from 'react-native';
 
-import { useBluetooth } from '../context/BluetoothContext';
+import useBluetooth from '../hooks/useBluetooth';
 import { ELM_COMMANDS } from '../utils/obdUtils';
 
 interface LogEntry {
@@ -38,10 +38,7 @@ const OBDTerminalComponent: React.FC = () => {
 
   // Add log entry
   const addLog = (type: LogEntry['type'], message: string) => {
-    setLogs(currentLogs => [
-      ...currentLogs,
-      { type, message, timestamp: new Date() }
-    ]);
+    setLogs(currentLogs => [...currentLogs, { type, message, timestamp: new Date() }]);
   };
 
   // Scroll to bottom if auto-scroll is enabled
@@ -83,25 +80,22 @@ const OBDTerminalComponent: React.FC = () => {
 
   // Format timestamp
   const formatTimestamp = (date: Date): string => {
-    return date.toLocaleTimeString([], { 
+    return date.toLocaleTimeString([], {
       hour12: false,
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit'
+      second: '2-digit',
     });
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.header}>
         <Text style={styles.title}>OBD Terminal</Text>
-        <TouchableOpacity 
-          style={styles.clearButton}
-          onPress={clearLog}
-        >
+        <TouchableOpacity style={styles.clearButton} onPress={clearLog}>
           <Text style={styles.clearButtonText}>Clear</Text>
         </TouchableOpacity>
       </View>
@@ -117,16 +111,16 @@ const OBDTerminalComponent: React.FC = () => {
       >
         {logs.map((log, index) => (
           <View key={index} style={styles.logEntry}>
-            <Text style={styles.timestamp}>
-              {formatTimestamp(log.timestamp)}
-            </Text>
-            <Text style={[
-              styles.logText,
-              log.type === 'sent' && styles.sentText,
-              log.type === 'received' && styles.receivedText,
-              log.type === 'error' && styles.errorText,
-              log.type === 'info' && styles.infoText,
-            ]}>
+            <Text style={styles.timestamp}>{formatTimestamp(log.timestamp)}</Text>
+            <Text
+              style={[
+                styles.logText,
+                log.type === 'sent' && styles.sentText,
+                log.type === 'received' && styles.receivedText,
+                log.type === 'error' && styles.errorText,
+                log.type === 'info' && styles.infoText,
+              ]}
+            >
               {log.type === 'sent' ? '> ' : ''}
               {log.message}
             </Text>
@@ -170,14 +164,8 @@ const OBDTerminalComponent: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity
-        style={styles.autoScrollButton}
-        onPress={() => setAutoScroll(!autoScroll)}
-      >
-        <Text style={[
-          styles.autoScrollText,
-          !autoScroll && styles.autoScrollDisabled
-        ]}>
+      <TouchableOpacity style={styles.autoScrollButton} onPress={() => setAutoScroll(!autoScroll)}>
+        <Text style={[styles.autoScrollText, !autoScroll && styles.autoScrollDisabled]}>
           Auto-scroll: {autoScroll ? 'ON' : 'OFF'}
         </Text>
       </TouchableOpacity>
