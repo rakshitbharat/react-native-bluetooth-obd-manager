@@ -1,7 +1,7 @@
 // Main entry point for React Native Bluetooth OBD Manager
-import { BluetoothProvider as BluetoothProviderComponent } from './context/BluetoothContext';
+import BluetoothProvider from './context/BluetoothContext';
 export { useBluetooth } from './context/BluetoothContext';
-export const BluetoothProvider = BluetoothProviderComponent;
+export { BluetoothProvider };
 export { useOBDManager } from './hooks/useOBDManager';
 export { useDeviceDetection } from './hooks/useDeviceDetection';
 export { useECUCommands } from './hooks/useECUCommands';
