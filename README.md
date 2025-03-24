@@ -13,6 +13,16 @@ A comprehensive and robust library for connecting to ELM327-based OBD-II adapter
 - 📱 React hooks-based API for easy integration
 - 🛠️ Includes ready-to-use UI components for quick implementation
 
+## ⚠️ Important Prerequisites
+
+> **Note**: This library assumes you have already set up the required dependencies in your React Native project. Please set up all dependent libraries before proceeding with this library's implementation.
+
+- [react-native-ble-manager](https://github.com/innoveit/react-native-ble-manager) - Follow their installation and setup instructions
+- [react-native-bluetooth-state-manager](https://github.com/Drazail/react-native-bluetooth-state-manager) - Follow their setup guide
+- [@react-native-async-storage/async-storage](https://github.com/react-native-async-storage/async-storage) - Complete their installation steps
+
+This library assumes that you have already configured these dependencies correctly in your project. Please make sure to follow each dependency's setup instructions carefully before proceeding with this library's installation.
+
 ## Installation
 
 ```bash
@@ -53,12 +63,13 @@ Add the following permissions to your `AndroidManifest.xml`:
 <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 ```
 
-## Basic Usage
+## Detailed Usage Guide
 
-### 1. Wrap your app with BluetoothProvider
+### 1. Basic Connection Setup
+
+First, wrap your application with the BluetoothProvider:
 
 ```jsx
-import React from 'react';
 import { BluetoothProvider } from 'react-native-bluetooth-obd-manager';
 
 const App = () => {
@@ -68,93 +79,267 @@ const App = () => {
     </BluetoothProvider>
   );
 };
-
-export default App;
 ```
 
-### 2. Use the OBDManager hook
+### 2. Implementing OBD Connection
+
+Here's a complete example showing how to handle device scanning, connection, and data retrieval:
 
 ```jsx
-import React, { useEffect, useState } from 'react';
-import { View, Text, Button } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, Button, Alert } from 'react-native';
 import { useOBDManager } from 'react-native-bluetooth-obd-manager';
 
-const OBDScreen = () => {
-  const [rpm, setRpm] = useState(null);
-  const [speed, setSpeed] = useState(null);
-  
-  const obd = useOBDManager({
-    onConnected: (deviceId) => console.log(`Connected to ${deviceId}`),
-    onDisconnected: () => console.log('Disconnected'),
-    onError: (error) => console.error('OBD Error:', error),
+const OBDImplementation = () => {
+  const [isScanning, setIsScanning] = useState(false);
+  const [vehicleData, setVehicleData] = useState({
+    rpm: null,
+    speed: null,
+    temp: null
   });
-  
-  const scanForDevices = async () => {
-    await obd.scanForDevices(5000); // Scan for 5 seconds
-  };
-  
-  const connectToDevice = async (deviceId) => {
-    await obd.connectToDevice(deviceId);
-  };
-  
-  const fetchData = async () => {
-    if (obd.isConnected) {
-      const rpmValue = await obd.getRPM();
-      const speedValue = await obd.getSpeed();
-      
-      setRpm(rpmValue);
-      setSpeed(speedValue);
+
+  const obd = useOBDManager({
+    onConnected: (deviceId) => {
+      Alert.alert('Connected', `Successfully connected to OBD device: ${deviceId}`);
+      // Start fetching data after connection
+      fetchVehicleData();
+    },
+    onDisconnected: () => {
+      Alert.alert('Disconnected', 'OBD device disconnected');
+      setVehicleData({ rpm: null, speed: null, temp: null });
+    },
+    onError: (error) => {
+      Alert.alert('Error', error.message);
+    },
+    autoInit: true, // Automatically initialize OBD on connection
+    connectToLast: true // Try to reconnect to the last device used
+  });
+
+  const handleStartScan = useCallback(async () => {
+    try {
+      setIsScanning(true);
+      await obd.scanForDevices(5000); // Scan for 5 seconds
+    } catch (error) {
+      Alert.alert('Scan Error', error.message);
+    } finally {
+      setIsScanning(false);
     }
-  };
-  
+  }, [obd]);
+
+  const handleConnect = useCallback(async (deviceId) => {
+    try {
+      await obd.connectToDevice(deviceId);
+    } catch (error) {
+      Alert.alert('Connection Error', error.message);
+    }
+  }, [obd]);
+
+  const fetchVehicleData = useCallback(async () => {
+    if (!obd.isConnected) return;
+
+    try {
+      const data = await obd.getLiveData();
+      setVehicleData({
+        rpm: data.rpm,
+        speed: data.speed,
+        temp: data.coolantTemp
+      });
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  }, [obd]);
+
   return (
-    <View style={{ flex: 1, padding: 20 }}>
-      <Text>Status: {obd.status}</Text>
-      
-      {obd.isConnected ? (
-        <View>
-          <Text>RPM: {rpm || 'Unknown'}</Text>
-          <Text>Speed: {speed ? `${speed} km/h` : 'Unknown'}</Text>
-          <Button title="Fetch Data" onPress={fetchData} />
-          <Button title="Disconnect" onPress={obd.disconnect} />
-        </View>
-      ) : (
-        <View>
-          <Button title="Scan for Devices" onPress={scanForDevices} />
-          
+    <View style={{ padding: 20 }}>
+      <Text style={{ fontSize: 18, marginBottom: 20 }}>
+        Status: {obd.status}
+      </Text>
+
+      {!obd.isConnected ? (
+        <>
+          <Button
+            title={isScanning ? 'Scanning...' : 'Scan for OBD Devices'}
+            onPress={handleStartScan}
+            disabled={isScanning}
+          />
+
           {obd.bluetooth.discoveredDevices.map(device => (
-            <Button 
+            <Button
               key={device.id}
-              title={device.name || 'Unknown Device'} 
-              onPress={() => connectToDevice(device.id)}
+              title={`Connect to ${device.name || device.id}`}
+              onPress={() => handleConnect(device.id)}
             />
           ))}
-        </View>
+        </>
+      ) : (
+        <>
+          <Text>RPM: {vehicleData.rpm || 'N/A'}</Text>
+          <Text>Speed: {vehicleData.speed ? `${vehicleData.speed} km/h` : 'N/A'}</Text>
+          <Text>Coolant Temp: {vehicleData.temp ? `${vehicleData.temp}°C` : 'N/A'}</Text>
+          
+          <Button
+            title="Refresh Data"
+            onPress={fetchVehicleData}
+          />
+          
+          <Button
+            title="Disconnect"
+            onPress={obd.disconnect}
+            color="red"
+          />
+        </>
       )}
     </View>
   );
 };
-
-export default OBDScreen;
 ```
 
-### 3. Or use the built-in components
+### 3. Common Use Cases
+
+#### Reading Diagnostic Trouble Codes (DTCs)
 
 ```jsx
-import React from 'react';
-import { View } from 'react-native';
-import { OBDLiveData } from 'react-native-bluetooth-obd-manager';
+const DiagnosticScreen = () => {
+  const obd = useOBDManager();
+  const [dtcCodes, setDtcCodes] = useState([]);
 
-const OBDScreen = () => {
+  const readDTC = async () => {
+    try {
+      const codes = await obd.getDiagnosticCodes();
+      setDtcCodes(codes);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to read DTCs');
+    }
+  };
+
+  const clearDTC = async () => {
+    try {
+      await obd.clearDiagnosticCodes();
+      setDtcCodes([]);
+      Alert.alert('Success', 'DTCs cleared successfully');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to clear DTCs');
+    }
+  };
+
   return (
-    <View style={{ flex: 1 }}>
-      <OBDLiveData />
+    <View>
+      <Button title="Read DTCs" onPress={readDTC} />
+      <Button title="Clear DTCs" onPress={clearDTC} />
+      {dtcCodes.map(code => (
+        <Text key={code}>{code}</Text>
+      ))}
     </View>
   );
 };
-
-export default OBDScreen;
 ```
+
+#### Continuous Data Monitoring
+
+```jsx
+const LiveMonitoring = () => {
+  const obd = useOBDManager();
+  const [isMonitoring, setIsMonitoring] = useState(false);
+
+  useEffect(() => {
+    let interval;
+
+    if (isMonitoring && obd.isConnected) {
+      interval = setInterval(async () => {
+        const data = await obd.getLiveData();
+        // Handle the data update
+        console.log('Live Data:', data);
+      }, 1000); // Update every second
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isMonitoring, obd.isConnected]);
+
+  return (
+    <View>
+      <Button
+        title={isMonitoring ? 'Stop Monitoring' : 'Start Monitoring'}
+        onPress={() => setIsMonitoring(!isMonitoring)}
+      />
+    </View>
+  );
+};
+```
+
+### 4. Error Handling
+
+```jsx
+const ErrorHandlingExample = () => {
+  const obd = useOBDManager({
+    onError: (error) => {
+      switch (error.code) {
+        case 'DEVICE_NOT_FOUND':
+          Alert.alert('Error', 'OBD device not found. Please check the connection.');
+          break;
+        case 'BLUETOOTH_DISABLED':
+          Alert.alert('Error', 'Please enable Bluetooth to continue.');
+          break;
+        case 'INITIALIZATION_FAILED':
+          Alert.alert('Error', 'Failed to initialize OBD. Please try reconnecting.');
+          break;
+        default:
+          Alert.alert('Error', error.message);
+      }
+    }
+  });
+
+  return (
+    // Your component JSX
+  );
+};
+```
+
+### 5. Best Practices
+
+1. **Connection Management**
+   - Always handle disconnections gracefully
+   - Implement automatic reconnection when appropriate
+   - Clear any ongoing operations when disconnected
+
+```jsx
+useEffect(() => {
+  if (!obd.isConnected) {
+    // Clean up any ongoing operations
+    setVehicleData(null);
+    setIsMonitoring(false);
+  }
+}, [obd.isConnected]);
+```
+
+2. **Performance Optimization**
+   - Use appropriate polling intervals (don't query too frequently)
+   - Implement data caching when needed
+   - Clean up resources when component unmounts
+
+3. **Error Recovery**
+   - Implement retry logic for failed operations
+   - Provide clear feedback to users
+   - Log errors for debugging
+
+### 6. Troubleshooting Common Issues
+
+1. **Connection Problems**
+   - Verify Bluetooth is enabled
+   - Check if the OBD device is powered
+   - Ensure vehicle ignition is on
+   - Try restarting the OBD device
+
+2. **Data Reading Issues**
+   - Verify PID support for your vehicle
+   - Check connection quality
+   - Ensure proper initialization sequence
+
+3. **Performance Issues**
+   - Reduce polling frequency
+   - Limit number of PIDs being monitored
+   - Check for memory leaks in your implementation
 
 ## API Reference
 
