@@ -1,0 +1,26 @@
+After analyzing the code and requirements, here are the only missing/incomplete items from the core requirements:
+
+Global Singleton Notification Listener
+While we have notification handling, we're currently starting/stopping the listener with connections
+Per requirements, we should have one global singleton listener that never stops
+This would improve reliability and reduce connection overhead
+Disconnection Handling Cleanup
+While we have basic disconnection handling, we're not fully resetting all internal states
+Need to ensure ALL flags and states are properly reset on disconnect
+This includes streaming flags, command queues, and cached data
+Automatic Streaming Timeout Safety Net
+Current streaming timeout is implemented but distributed across multiple places
+Need to consolidate the 4-second timeout logic into a single, reliable mechanism
+Should handle edge cases like partial responses or communication interruption
+
+
+here i can see streamingManager is used but thats wrong streamingManager is so much important that it should be used in the main this NotificationHandler
+
+also the 
+this.streamingManager.stopStreaming();
+
+should have watched on a global level and on a singlelong level of NotificationHandler in a way that if we dont receive any notification within given timer like 4 sec it should be stoped by calling 
+this.streamingManager.stopStreaming();
+
+so StreamingStateManager
+should have its own file and its own place its very important

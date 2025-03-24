@@ -1,0 +1,92 @@
+{
+  "name": "react-native-bluetooth-obd-manager",
+  "version": "0.1.0",
+  "description": "A React Native library for seamless communication with ELM327 OBD devices via Bluetooth",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit -p .",
+    "prepare": "node install-hooks.js && npm run build",
+    "test": "jest --config jest.config.js",
+    "test:watch": "jest --config jest.config.js --watch",
+    "test:coverage": "jest --config jest.config.js --coverage",
+    "lint": "eslint 'src/**/*.{js,ts,tsx}'",
+    "lint:fix": "eslint 'src/**/*.{js,ts,tsx}' --fix",
+    "prettier": "prettier --write 'src/**/*.{js,ts,tsx}'",
+    "prettier:check": "prettier --check 'src/**/*.{js,ts,tsx}'",
+    "check": "tsc --noEmit -p . && npm run lint",
+    "validate": "npm run check && npm run test",
+    "precommit": "lint-staged",
+    "setup-hooks": "node install-hooks.js",
+    "changelog": "auto-changelog --template keepachangelog --commit-limit false"
+  },
+  "lint-staged": {
+    "src/**/*.{js,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  },
+  "keywords": [
+    "react-native",
+    "bluetooth",
+    "ble",
+    "obd",
+    "elm327",
+    "car",
+    "diagnostic"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": ">=16.9.0",
+    "react-native": ">=0.63.0"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.1.2",
+    "convert-string": "^0.1.0",
+    "react-native-ble-manager": "^10.0.0",
+    "react-native-permissions": "^3.8.0",
+    "rxjs": "^7.8.1",
+    "text-decoding": "^1.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.10",
+    "@babel/plugin-proposal-class-properties": "^7.18.6",
+    "@babel/plugin-proposal-private-methods": "^7.18.6",
+    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@babel/plugin-transform-class-properties": "^7.25.9",
+    "@babel/plugin-transform-private-methods": "^7.25.9",
+    "@babel/plugin-transform-private-property-in-object": "^7.25.9",
+    "@babel/preset-env": "^7.26.9",
+    "@babel/preset-typescript": "^7.26.0",
+    "@testing-library/react-native": "^12.1.0",
+    "@types/jest": "^29.5.14",
+    "@types/react": "^19.0.0",
+    "@types/react-native": "^0.72.0",
+    "@typescript-eslint/eslint-plugin": "^5.59.2",
+    "@typescript-eslint/parser": "^5.59.2",
+    "auto-changelog": "^2.4.0",
+    "babel-jest": "^29.7.0",
+    "eslint": "^8.40.0",
+    "eslint-config-prettier": "^8.8.0",
+    "eslint-plugin-import": "^2.27.5",
+    "eslint-plugin-jest": "^27.2.1",
+    "eslint-plugin-react": "^7.32.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "husky": "^8.0.3",
+    "jest": "^29.5.0",
+    "lint-staged": "^13.2.2",
+    "metro-react-native-babel-preset": "^0.77.0",
+    "prettier": "^2.8.8",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.1.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/react-native-bluetooth-obd-manager.git"
+  }
+}

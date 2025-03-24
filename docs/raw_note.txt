@@ -1,0 +1,56 @@
+remove everything in which it is not bluetooth relerated or OBD2 elm327 related also dont do anything for improvement just ignore function not found or its not bein related etc because we are just making this code for reference
+
+also dont remove its states or memory or helpers or configs or logics about bluetooth or elm327
+
+
+now this is a project in which we are going to provide some main featured in which who ever starts to make the obd based project they are over furstreared and have a lot of issues in project setup so this package will help to all of them to just skip the init things and start the bussiness logics
+so what we are going to make is we just use some libraries like
+Based on the code analysis, here are the key libraries used in this React Native project:
+
+Core React Native Libraries:
+react-native (used via @own-react-native alias)
+react-redux (for state management)
+Bluetooth Related:
+react-native-ble-manager - Main BLE (Bluetooth Low Energy) management library
+react-native-permissions - For handling Bluetooth and location permissions
+Utility Libraries:
+convert-string - For string/byte conversion utilities
+text-decoding - For TextDecoder functionality
+System Settings:
+Custom wrappers around system settings like SystemSettingWrapper and AlertWrapper
+
+now we are going to first make BluetoothContext in which we will wrapp our entire project run time data and that is what use have to use thats it also in this wrapper we will use useReducer so that we can have a better state management 
+next then we init the wrapper the childer JSX should be rendered only if the react native bluetooth is initiated properly for that please check ref folder what will help to understand in bluetooth manager how we have that ref things to work on next is we have to simply make some very important states and it should be real time out of box like bluetooth permission received true / false or bluetooth is on or off and next is bluetooth is connected to a device or not connected
+
+after this we have a very important thing called bluetooth-notification this is nothing but a area where we receive raw byte data from bluetooth device so its naming is confusing but its a data receiver listner
+
+next we will make it a very stable and a very clean bluetooth scanner in which we will scan for near by devices
+
+next is connect this should be very much stable and it should connect to old elm327 device so we have some fixed logic for that in which how we connect with any but old device by finding its services and charecters so for some device we have to use write and for some write without response or write with response but remember we get data in bluetooth-notification always for any method we use to connect and send AT commands 
+
+we have to be assured that at connection time we should connect to any obd device by smartly finding the right services and its characters
+
+next is we have to make a function in which we can send a string of command like ATZ etc and it automatically convert it to bytes if needed and use the right available function to fire at command the dynamicness should be there to select  write without response or write with response or anything for sending command
+
+next is very important this send command and connect to OBD device this both are the most important functions of our library and thats the reason we are here so what is diff from any other library will be and our lirbary is that our send command will return the data by firing write even if the data is received from some listner we have the logic to do so by waiting for > in the response we have that all in our ref folder so we will make this by learning from there and the next is the connect function the connection making to any bluetooth elm327 dongle is some time very dificult because some have its own way of services and charector so here we are going to make a connect function in which we just pass mac-address and even if it have any type of dongle we will connect smartly by finding best match of services and charectors
+
+next is we should do the setup of listner in our bluetooth context to receive data from bluetooth-listner then we start the notification BTW we have to start listner globally singleton out of box and we will never stop it like when we disconnect we stop listning we dont need to start because its fine if we never listen for multiple time and make a single listner
+
+next is we have to make a flag of streaming it means we wait for command its its response received or not and if constant if we have a successfull streaming we can make the flag true and for example of the command is last and we receive the > diterminator from device we can make the flag false or at any possible situation we are our of synx and if flag is true at it stays true for more then 4 sec we have to automatic make it false
+
+next is we have to make a proper disconnection in which we disconnect the device and we properly use stop notification to stop and also maintain if any internal flags or states to reset of this context
+
+here we also have to take care of asking bleutooth permission from user and also we have to take care of a listner in which whenever connect bluetooth device gets disconnected we have a real time state in which we get idea what happend to the connection
+
+all this opeations are part of BluetoothContext and its out of box hook in which we will have all the functions to make this dream possible
+
+continue we dont have anything outside of our project we already have all ref code in ref folder
+
+i can se we are making more focus on getting data its fine we dont have to remove it for now but our project is not made to get data our project is made mainly for 3 things connect to any OBD device easily then a function called sendCommand which give data in return itself so dont have to rely on any eventlistner thow we are listning for data itself in sendCommand after writing the data that logic is there in ref folder OBDMonitor file
+
+also at lsat the function called disconnect
+
+this project is not at all a guide to setup the libraries things add strict note that please use this application after installing all the libraries and then start using it
+
+
+please fix all lint issues or any other terminal said issues and please check readme file and write the complete test case for this project
