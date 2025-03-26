@@ -24,3 +24,7 @@ this.streamingManager.stopStreaming();
 
 so StreamingStateManager
 should have its own file and its own place its very important
+
+in this project for now we are having a big problem and that is our user dont understand the usage of this library we have to make a really good user manual for them so that they can usage easily 
+
+we have this open source project on github so we can also use it for the hosting of document file
