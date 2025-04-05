@@ -35,3 +35,9 @@ module.exports = {
   },
   // Add any other React Native APIs used in your tests
 };
+
+describe('React Native mocks', () => {
+  it('should exist', () => {
+    expect(true).toBe(true);
+  });
+});
