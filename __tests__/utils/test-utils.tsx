@@ -1,9 +1,13 @@
-import React, { type FC, type ReactNode } from 'react';
+import React from 'react';
 import { BluetoothProvider } from '../../src/context/BluetoothProvider';
 
-export const TestWrapper: FC<{ children: ReactNode }> = ({ children }) => (
-  <BluetoothProvider>{children}</BluetoothProvider>
-);
+export const TestWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    return (
+        <BluetoothProvider>
+            {children}
+        </BluetoothProvider>
+    );
+};
 
 test('test-utils placeholder test', () => {
   expect(true).toBe(true); // Placeholder test
