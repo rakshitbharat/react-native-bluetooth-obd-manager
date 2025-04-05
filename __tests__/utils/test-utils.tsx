@@ -1,4 +1,5 @@
 import React from 'react';
+import React from 'react';
 import { BluetoothProvider } from '../../src/context/BluetoothProvider';
 import type { ReactNode } from 'react';
 import { mockNativeEventEmitter } from '../mocks/react-native';
