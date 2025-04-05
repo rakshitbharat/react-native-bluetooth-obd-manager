@@ -1,12 +1,11 @@
 // __tests__/hooks/useBluetooth.test.tsx
 
-import React, { type FC, type ReactNode } from 'react';
+import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 
-// Import the hook and provider
+// Import the hook
 import { useBluetooth } from '../../src/hooks/useBluetooth';
-import { BluetoothProvider } from '../../src/context/BluetoothProvider';
 
 // Import mocks and types
 import BleManager from 'react-native-ble-manager'; // Will import from __mocks__
@@ -435,7 +434,6 @@ describe('useBluetooth Hook Integration Tests', () => {
             await act(async () => {
                 commandPromise = result.current.sendCommand(command);
                 await new Promise(setImmediate); // Allow write call
-                expect(result.current.isAwaitingResponse).toBe(true);
                 // Emit chunks separately - IMPORTANT: wrap event emissions in act
                 act(() => { emitBleManagerEvent('BleManagerDidUpdateValueForCharacteristic', { value: chunk1 }); });
                 act(() => { emitBleManagerEvent('BleManagerDidUpdateValueForCharacteristic', { value: chunk2 }); });

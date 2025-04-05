@@ -5,8 +5,9 @@ import { renderHook, act, waitFor } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 
 // Import the hook and provider
-import { useBluetooth } from '../../src/hooks/useBluetooth';
-import { BluetoothProvider } from '../../src/context/BluetoothProvider';
+import { useBluetooth } from './useBluetooth';
+import { BluetoothProvider } from '../context/BluetoothProvider';
+import Wrapper from './Wrapper'; // Import the new Wrapper component
 
 // Import mocks AND ensure they are mocked before use
 // (jest.setup.js should handle the actual jest.mock calls)
@@ -14,7 +15,7 @@ import BleManager from 'react-native-ble-manager';
 import Permissions from 'react-native-permissions';
 import type { PermissionStatus, RESULTS, Permission } from 'react-native-permissions'; // Import types from actual module for casting
 import { emitBleManagerEvent } from '../../__mocks__/react-native-ble-manager'; // Import helper from mock
-import { KNOWN_ELM327_TARGETS, DEFAULT_COMMAND_TIMEOUT, DEFAULT_STREAMING_INACTIVITY_TIMEOUT, ELM327_COMMAND_TERMINATOR, ELM327_PROMPT_BYTE } from '../../src/constants';
+import { KNOWN_ELM327_TARGETS, DEFAULT_COMMAND_TIMEOUT, DEFAULT_STREAMING_INACTIVITY_TIMEOUT, ELM327_COMMAND_TERMINATOR, ELM327_PROMPT_BYTE } from '../constants';
 import type { Peripheral } from 'react-native-ble-manager';
 
 // --- Mock Date.now for timestamp consistency ---
@@ -36,7 +37,12 @@ const wrapper: FC<{ children: ReactNode }> = ({ children }) => (
 
 // Helper to create mock peripherals
 const createMockPeripheral = (id: string, name?: string, services?: any[], characteristics?: any[]): Peripheral => ({
-    id, name: name ?? `Mock_${id}`, rssi: -60, advertising: {}, services, characteristics
+  id,
+  name: name ?? `Mock_${id}`,
+  rssi: -60,
+  advertising: {}, // Ensure advertising is an object
+  services: services ?? [], // Default to an empty array if undefined
+  characteristics: characteristics ?? [] // Default to an empty array if undefined
 });
 
 // Disable fake timers for now to debug hanging issue
