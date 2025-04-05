@@ -1,0 +1,74 @@
+// tsconfig.json
+{
+  "compilerOptions": {
+    /* Base Options: */
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "target": "esnext",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true, // Use `import type`
+
+    /* Strictness */
+    "strict": true,
+    "noUncheckedIndexedAccess": true, // Consider adding for extra safety
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+
+    /* If transpiling with TypeScript: */
+    "module": "esnext", // Adjusted by builder-bob
+    // "outDir": "dist",
+
+    /* If NOT transpiling with TypeScript: */
+    // "module": "preserve",
+    "noEmit": false,
+
+    /* If your code runs in the DOM: */
+    // "lib": ["esnext", "dom", "dom.iterable"],
+
+    /* If your code doesn't run in the DOM: */
+    "lib": ["esnext"],
+
+
+    /* react-native specific */
+    "jsx": "react-native",
+
+    /* Module Resolution Options */
+    "moduleResolution": "node", // Or "bundler" if using newer TS/Node versions
+    "baseUrl": "./", // Allows absolute paths from src
+    "paths": {
+      "react-native-bluetooth-obd-manager": ["./src/index"],
+      "react-native-bluetooth-obd-manager/*": ["./src/*"]
+    },
+
+    /* Source Map Options */
+    "sourceMap": true, // Generate source maps for debugging
+    "declaration": true, // Generate .d.ts files
+    "declarationMap": true, // Generate source maps for .d.ts files
+
+    /* Advanced Options */
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": [
+    "src/**/*",
+    "__tests__/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "babel.config.js",
+    "metro.config.js",
+    "jest.config.js",
+    "example" // Exclude the example app's node_modules if it exists
+  ]
+}

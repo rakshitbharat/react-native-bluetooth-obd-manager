@@ -1,0 +1,168 @@
+{
+  "name": "react-native-bluetooth-obd-manager",
+  "version": "0.1.0",
+  "description": "A React Native hook library to manage Bluetooth Low Energy connections and communication with ELM327 OBD-II adapters.",
+  "main": "lib/commonjs/index",
+  "module": "lib/module/index",
+  "react-native": "src/index",
+  "source": "src/index",
+  "types": "lib/typescript/index.d.ts",
+  "files": [
+    "src",
+    "lib",
+    "android",
+    "ios",
+    "cpp",
+    "*.podspec",
+    "!lib/typescript/example",
+    "!ios/build",
+    "!android/build",
+    "!android/gradle",
+    "!android/gradlew",
+    "!android/gradlew.bat",
+    "!android/local.properties",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__"
+  ],
+  "scripts": {
+    "start": "react-native start",
+    "build": "tsc --build",
+    "test": "jest",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "prepare": "husky install"
+  },
+  "keywords": [
+    "react-native",
+    "ios",
+    "android",
+    "bluetooth",
+    "ble",
+    "obd",
+    "obd2",
+    "elm327",
+    "automotive"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rakshitbharat/react-native-bluetooth-obd-manager.git"
+  },
+  "author": "rakshitbharat",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/rakshitbharat/react-native-bluetooth-obd-manager/issues"
+  },
+  "homepage": "https://github.com/rakshitbharat/react-native-bluetooth-obd-manager#readme",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "peerDependencies": {
+    "react": ">=17.0.2",
+    "react-native": ">=0.64.0",
+    "react-native-ble-manager": ">=10.1.3",
+    "react-native-permissions": ">=3.0.0"
+  },
+  "dependencies": {
+    "react-native-ble-manager": ">=10.1.3"
+  },
+  "devDependencies": {
+    "@babel/eslint-parser": "*",
+    "@react-native-community/eslint-config": "*",
+    "@release-it/conventional-changelog": "*",
+    "@testing-library/jest-native": "*",
+    "@testing-library/react-native": "*",
+    "@types/jest": "*",
+    "@types/react": "*",
+    "@types/react-native": "*",
+    "@typescript-eslint/eslint-plugin": "*",
+    "@typescript-eslint/parser": "*",
+    "babel-jest": "*",
+    "commitlint": "*",
+    "del-cli": "*",
+    "eslint": "*",
+    "eslint-config-prettier": "*",
+    "eslint-plugin-prettier": "*",
+    "eslint-plugin-react": "*",
+    "eslint-plugin-react-hooks": "*",
+    "husky": "*",
+    "jest": "*",
+    "jest-environment-jsdom": "^29.7.0",
+    "lint-staged": "*",
+    "metro-react-native-babel-preset": "^0.77.0",
+    "pod-install": "*",
+    "prettier": "*",
+    "react": "*",
+    "react-native": "*",
+    "react-native-builder-bob": "*",
+    "react-native-permissions": "*",
+    "react-test-renderer": "*",
+    "release-it": "*",
+    "ts-jest": "*",
+    "typescript": "*"
+  },
+  "resolutions": {
+    "@types/react": "~18.2.45",
+    "react": "18.2.0"
+  },
+  "engines": {
+    "node": ">=14",
+    "yarn": ">=1.22"
+  },
+  "packageManager": "yarn@1.22.19",
+  "release-it": {
+    "git": {
+      "commitMessage": "chore: release ${version}",
+      "tagName": "v${version}"
+    },
+    "npm": {
+      "publish": true
+    },
+    "github": {
+      "release": true
+    },
+    "plugins": {
+      "@release-it/conventional-changelog": {
+        "preset": "angular"
+      }
+    }
+  },
+  "eslintConfig": {
+    "root": true,
+    "extends": [
+      "./.eslintrc.js"
+    ]
+  },
+  "eslintIgnore": [
+    "node_modules/",
+    "lib/",
+    "dist/",
+    "coverage/",
+    "example/"
+  ],
+  "prettier": "./.prettierrc.js",
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      "commonjs",
+      "module",
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
+    ]
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yaml,yml}": [
+      "prettier --write"
+    ]
+  }
+}
