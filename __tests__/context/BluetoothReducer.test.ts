@@ -19,6 +19,14 @@ let dateNowSpy: jest.SpyInstance;
 beforeAll(() => { dateNowSpy = jest.spyOn(Date, 'now').mockImplementation(() => MOCK_DATE_NOW); });
 afterAll(() => { dateNowSpy.mockRestore(); });
 
+beforeEach(() => {
+  jest.spyOn(console, 'warn').mockImplementation(() => {}); // Suppress warnings
+  jest.spyOn(console, 'error').mockImplementation(() => {}); // Suppress errors
+});
+
+afterEach(() => {
+  jest.restoreAllMocks(); // Restore original implementations
+});
 
 // Helper to create mock peripheral
 const createMockPeripheral = (id: string, name?: string): Peripheral => ({

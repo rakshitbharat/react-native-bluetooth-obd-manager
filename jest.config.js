@@ -1,35 +1,47 @@
 // jest.config.js
 module.exports = {
-  preset: 'react-native', // Use the standard preset for React Native
-  testEnvironment: 'node', // Usually correct for testing library logic without native UI
-  moduleFileExtensions: [
-      "ts",
-      "tsx",
-      "js",
-      "jsx",
-      "json",
-      "node"
+  preset: 'react-native',
+  testEnvironment: 'jsdom',
+  setupFiles: [
+    '<rootDir>/node_modules/react-native/jest/setup.js',
   ],
-  modulePathIgnorePatterns: [
-      "<rootDir>/example/node_modules", // Ignore example app modules
-      "<rootDir>/lib/" // Ignore built output
+  setupFilesAfterEnv: [
+    '<rootDir>/test/setup.ts',
+  ],
+  moduleFileExtensions: [
+    "ts",
+    "tsx",
+    "js",
+    "jsx",
+    "json",
+    "node"
   ],
   transform: {
-    '^.+\\.(js|jsx|ts|tsx)$': 'babel-jest',
+    '^.+\\.(js|jsx|ts|tsx)$': ['babel-jest', {
+      presets: ['module:metro-react-native-babel-preset'],
+    }],
   },
-  // Ensure setup file runs AFTER environment is set up
-  setupFilesAfterEnv: [
-    '@testing-library/jest-native/extend-expect', // Provides extra RN matchers
-    '<rootDir>/jest.setup.js', // Your custom setup file for mocks
+  transformIgnorePatterns: [
+    'node_modules/(?!(react-native|@react-native|react-native-ble-manager|react-native-permissions)/)',
   ],
-  collectCoverageFrom: [
-      "src/**/*.{ts,tsx}", // Collect coverage from source files
-      "!src/types/**/*", // Exclude type definitions
-      "!src/index.ts" // Exclude main index export
+  testPathIgnorePatterns: [
+    '\\.snap$',
+    '<rootDir>/node_modules/',
   ],
-  coverageReporters: [
-      "json-summary",
-      "text",
-      "lcov"
-  ],
+  moduleNameMapper: {
+    '^react-native$': '<rootDir>/__mocks__/react-native.ts'
+  },
+  globals: {
+    '__DEV__': true
+  },
+  testTimeout: 10000,
+  fakeTimers: {
+    enableGlobally: true,
+    now: 1678886400000, // Set consistent timestamp
+    doNotFake: ['nextTick', 'setImmediate']
+  },
+  testEnvironmentOptions: {
+    url: 'http://localhost',
+    customExportConditions: ['node', 'node-addons']
+  }
 };

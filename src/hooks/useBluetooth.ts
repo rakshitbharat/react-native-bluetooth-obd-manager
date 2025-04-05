@@ -1,635 +1,662 @@
-// __tests__/hooks/useBluetooth.test.tsx
+// src/hooks/useBluetooth.ts
 
-import React, { type FC, type ReactNode } from 'react';
-import { renderHook, act, waitFor } from '@testing-library/react-native';
+import { useCallback, useRef, useEffect } from 'react';
 import { Platform } from 'react-native';
+import BleManager, {
+  type Peripheral,
+} from 'react-native-ble-manager';
+import * as Permissions from 'react-native-permissions';
+import type { PermissionStatus } from 'react-native-permissions';
+import type { BleError } from '../types';
+// Import converter if needed for specific byte manipulations, TextDecoder is often built-in now
+// import { stringToBytes } from 'convert-string'; // Example if needed
+// TextDecoder/TextEncoder are generally globally available in modern RN environments
 
-// Import the hook and provider
-import { useBluetooth } from '../../src/hooks/useBluetooth';
-import { BluetoothProvider } from '../../src/context/BluetoothProvider';
+import { useBluetoothDispatch, useBluetoothState } from '../context/BluetoothContext';
+import { useInternalCommandControl } from '../context/BluetoothProvider';
+import { KNOWN_ELM327_TARGETS, DEFAULT_COMMAND_TIMEOUT, ELM327_COMMAND_TERMINATOR, ELM327_PROMPT_BYTE } from '../constants';
+import type { ActiveDeviceConfig, UseBluetoothResult } from '../types';
 
-// Import mocks AND ensure they are mocked before use
-// (jest.setup.js should handle the actual jest.mock calls)
-import BleManager from 'react-native-ble-manager';
-import Permissions from 'react-native-permissions';
-import type { PermissionStatus, RESULTS, Permission } from 'react-native-permissions'; // Import types from actual module for casting
-import { emitBleManagerEvent } from '../../__mocks__/react-native-ble-manager'; // Import helper from mock
-import { KNOWN_ELM327_TARGETS, DEFAULT_COMMAND_TIMEOUT, DEFAULT_STREAMING_INACTIVITY_TIMEOUT, ELM327_COMMAND_TERMINATOR, ELM327_PROMPT_BYTE } from '../../src/constants';
-import type { Peripheral } from 'react-native-ble-manager';
+// Helper to create Promises that can be resolved/rejected externally
+// This is crucial for managing async operations triggered by BLE events
+interface DeferredPromise<T> {
+    promise: Promise<T>;
+    resolve: (value: T | PromiseLike<T>) => void;
+    reject: (reason?: any) => void;
+}
 
-// --- Mock Date.now for timestamp consistency ---
-const MOCK_DATE_NOW = 1678886400000;
-let dateNowSpy: jest.SpyInstance;
-beforeAll(() => { dateNowSpy = jest.spyOn(Date, 'now').mockImplementation(() => MOCK_DATE_NOW); });
-afterAll(() => { dateNowSpy.mockRestore(); });
-
-// --- Get Typed Mock Functions ---
-// We get the references here, but configure implementations in beforeEach
-const mockBleManager = jest.mocked(BleManager);
-const mockPermissions = jest.mocked(Permissions);
-const mockRESULTS = Permissions.RESULTS as typeof RESULTS; // Cast for type safety
-
-// Helper Component: Wrapper with Provider
-const wrapper: FC<{ children: ReactNode }> = ({ children }) => (
-  <BluetoothProvider>{children}</BluetoothProvider>
-);
-
-// Helper to create mock peripherals
-const createMockPeripheral = (id: string, name?: string, services?: any[], characteristics?: any[]): Peripheral => ({
-    id, name: name ?? `Mock_${id}`, rssi: -60, advertising: {}, services, characteristics
-});
-
-// Disable fake timers for now to debug hanging issue
-// jest.useFakeTimers();
-
-describe('useBluetooth Hook Integration Tests', () => {
-
-    // --- Setup & Teardown ---
-    beforeEach(() => {
-        jest.clearAllMocks();
-        // Reset Platform to default (Android 12+)
-        Object.defineProperty(Platform, 'OS', { get: () => 'android', configurable: true });
-        Object.defineProperty(Platform, 'Version', { get: () => 31, configurable: true });
-
-        // --- Configure Mocks Explicitly Here ---
-
-        // Permissions (Default granted)
-        mockPermissions.check.mockResolvedValue(mockRESULTS.GRANTED);
-        mockPermissions.request.mockResolvedValue(mockRESULTS.GRANTED);
-        mockPermissions.checkMultiple.mockImplementation(async (perms: Permission[]) => {
-            const statuses: Record<string, PermissionStatus> = {};
-            perms.forEach(p => statuses[p] = mockRESULTS.GRANTED);
-            return statuses;
-        });
-         mockPermissions.requestMultiple.mockImplementation(async (perms: Permission[]) => {
-            const statuses: Record<string, PermissionStatus> = {};
-            perms.forEach(p => statuses[p] = mockRESULTS.GRANTED);
-            return statuses;
-        });
-
-        // BleManager (Reset implementations for all used methods)
-        mockBleManager.start.mockResolvedValue(undefined);
-        // **** Key Change: Re-apply implementation for checkState ****
-        mockBleManager.checkState.mockImplementation(() => {
-             // Use setImmediate or process.nextTick to simulate async event emission better
-             setImmediate(() => emitBleManagerEvent('BleManagerDidUpdateState', { state: 'on' }));
-        });
-        mockBleManager.scan.mockResolvedValue(undefined);
-        mockBleManager.connect.mockResolvedValue(undefined);
-        mockBleManager.disconnect.mockResolvedValue(undefined);
-        mockBleManager.enableBluetooth.mockResolvedValue(undefined);
-        mockBleManager.retrieveServices.mockImplementation(async (id) => createMockPeripheral(id)); // Default empty
-        mockBleManager.startNotification.mockResolvedValue(undefined);
-        mockBleManager.stopNotification.mockResolvedValue(undefined);
-        mockBleManager.write.mockResolvedValue(undefined);
-        mockBleManager.writeWithoutResponse.mockResolvedValue(undefined);
+function createDeferredPromise<T>(): DeferredPromise<T> {
+    let resolveFn: (value: T | PromiseLike<T>) => void;
+    let rejectFn: (reason?: any) => void;
+    const promise = new Promise<T>((resolve, reject) => {
+        resolveFn = resolve;
+        rejectFn = reject;
     });
+    // @ts-expect-error: TS doesn't know resolveFn/rejectFn are assigned in Promise constructor
+    return { promise, resolve: resolveFn, reject: rejectFn };
+}
 
-    // Clear timers if fake timers are re-enabled later
-    // afterEach(() => {
-    //    jest.clearAllTimers();
-    // });
+/**
+ * Custom hook providing access to Bluetooth state and functions
+ * for interacting with ELM327 OBD-II adapters.
+ */
+export const useBluetooth = (): UseBluetoothResult => {
+  const state = useBluetoothState();
+  const dispatch = useBluetoothDispatch();
+  const { currentCommandRef } = useInternalCommandControl();
 
-    // --- Initialization and Basic State ---
-    it('should initialize correctly and reflect initial BT state', async () => {
-        const { result } = renderHook(() => useBluetooth(), { wrapper });
-        expect(result.current.isInitializing).toBe(true);
-        // Wait for initialization AND the simulated state update from checkState mock
-        await waitFor(() => {
-            expect(result.current.isInitializing).toBe(false);
-            expect(result.current.isBluetoothOn).toBe(true);
-        });
-        expect(result.current.hasPermissions).toBe(false); // Initial state
-    });
+  // Refs to manage promises for ongoing async operations initiated by the hook
+  const scanPromiseRef = useRef<DeferredPromise<void> | null>(null);
+  const connectPromiseRef = useRef<DeferredPromise<Peripheral> | null>(null);
+  const disconnectPromiseRef = useRef<DeferredPromise<void> | null>(null);
 
-    it('should update isBluetoothOn when BleManagerDidUpdateState event is emitted', async () => {
-        const { result } = renderHook(() => useBluetooth(), { wrapper });
-        // Wait for initial 'on' state from beforeEach mock
-        await waitFor(() => expect(result.current.isBluetoothOn).toBe(true));
+  // --- Permission Functions ---
 
-        await act(async () => { emitBleManagerEvent('BleManagerDidUpdateState', { state: 'off' }); });
-        expect(result.current.isBluetoothOn).toBe(false);
+  const checkPermissions = useCallback(async (): Promise<boolean> => {
+    console.info('[useBluetooth] Checking permissions...');
+    let requiredPermissions: Permissions.Permission[] = [];
+    if (Platform.OS === 'android') {
+      if (Platform.Version >= 31) { // Android 12+
+        requiredPermissions = [
+          Permissions.PERMISSIONS.ANDROID.BLUETOOTH_SCAN,
+          Permissions.PERMISSIONS.ANDROID.BLUETOOTH_CONNECT,
+          Permissions.PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION, // Still recommended for reliable scanning
+        ];
+      } else { // Android 11 and below
+        requiredPermissions = [
+          Permissions.PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION, // Required for BLE scanning
+        ];
+      }
+    } else if (Platform.OS === 'ios') {
+      // iOS permissions are typically handled via Info.plist entries
+      // (NSBluetoothAlwaysUsageDescription, NSLocationWhenInUseUsageDescription)
+      // Check might implicitly succeed if entries exist, but we can check location
+      requiredPermissions = [Permissions.PERMISSIONS.IOS.LOCATION_WHEN_IN_USE];
+    }
 
-        await act(async () => { emitBleManagerEvent('BleManagerDidUpdateState', { state: 'on' }); });
-        expect(result.current.isBluetoothOn).toBe(true);
-    });
+    if (requiredPermissions.length === 0) {
+        console.info('[useBluetooth] No specific permissions require checking on this platform/OS version.');
+        dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: true }); // Assume true if none needed
+        return true;
+    }
 
-    // --- Permissions ---
-    describe('Permissions', () => {
-        it('checkPermissions updates state and returns true if granted', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            let granted = false;
-            await act(async () => { granted = await result.current.checkPermissions(); });
-            expect(granted).toBe(true);
-            expect(result.current.hasPermissions).toBe(true);
-        });
+    try {
+      const statuses = await Permissions.checkMultiple(requiredPermissions);
+      const allGranted = requiredPermissions.every(
+        (permission) => statuses[permission] === Permissions.RESULTS.GRANTED,
+      );
+      console.info(`[useBluetooth] Permission check result: ${allGranted}`, statuses);
+      dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: allGranted });
+      return allGranted;
+    } catch (error) {
+      console.error('[useBluetooth] Permission check failed:', error);
+      dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: false });
+      dispatch({ type: 'SET_ERROR', payload: error as Error });
+      return false;
+    }
+  }, [dispatch]);
 
-        it('checkPermissions updates state and returns false if denied', async () => {
-            mockPermissions.checkMultiple.mockResolvedValueOnce({ [Permissions.PERMISSIONS.ANDROID.BLUETOOTH_SCAN]: mockRESULTS.DENIED } as any);
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            let granted = true;
-            await act(async () => { granted = await result.current.checkPermissions(); });
-            expect(granted).toBe(false);
-            expect(result.current.hasPermissions).toBe(false);
-        });
 
-        it('requestBluetoothPermissions updates state and returns true if granted', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            let granted = false;
-            await act(async () => { granted = await result.current.requestBluetoothPermissions(); });
-            expect(granted).toBe(true);
-            expect(result.current.hasPermissions).toBe(true);
-            expect(mockPermissions.requestMultiple).toHaveBeenCalled();
-        });
+  const requestBluetoothPermissions = useCallback(async (): Promise<boolean> => {
+    console.info('[useBluetooth] Requesting permissions...');
+    let permissionsToRequest: Permissions.Permission[] = [];
+    let iosBlePermissionNeeded = false;
 
-        it('requestBluetoothPermissions updates state and returns false if denied', async () => {
-            mockPermissions.requestMultiple.mockResolvedValueOnce({ [Permissions.PERMISSIONS.ANDROID.BLUETOOTH_SCAN]: mockRESULTS.DENIED } as any);
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            let granted = true;
-            await act(async () => { granted = await result.current.requestBluetoothPermissions(); });
-            expect(granted).toBe(false);
-            expect(result.current.hasPermissions).toBe(false);
-        });
+    if (Platform.OS === 'android') {
+      if (Platform.Version >= 31) { // Android 12+
+        permissionsToRequest = [
+          Permissions.PERMISSIONS.ANDROID.BLUETOOTH_SCAN,
+          Permissions.PERMISSIONS.ANDROID.BLUETOOTH_CONNECT,
+          Permissions.PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION,
+        ];
+      } else { // Android 11 and below
+        permissionsToRequest = [
+          Permissions.PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION,
+        ];
+      }
+    } else if (Platform.OS === 'ios') {
+      permissionsToRequest = [Permissions.PERMISSIONS.IOS.LOCATION_WHEN_IN_USE];
+      iosBlePermissionNeeded = true;
+    }
 
-        it('requestBluetoothPermissions handles blocked status', async () => {
-            mockPermissions.requestMultiple.mockResolvedValueOnce({ [Permissions.PERMISSIONS.ANDROID.BLUETOOTH_CONNECT]: mockRESULTS.BLOCKED } as any);
-            const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(); // Silence expected error log
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            let granted = true;
-            await act(async () => { granted = await result.current.requestBluetoothPermissions(); });
-            expect(granted).toBe(false);
-            expect(result.current.hasPermissions).toBe(false);
-            expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Permissions blocked'));
-            consoleErrorSpy.mockRestore();
-        });
+    if (permissionsToRequest.length === 0 && !iosBlePermissionNeeded) {
+        console.info('[useBluetooth] No specific permissions require requesting on this platform.');
+        dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: true });
+        return true;
+    }
 
-         it('promptEnableBluetooth calls BleManager.enableBluetooth on Android', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await act(async () => { emitBleManagerEvent('BleManagerDidUpdateState', { state: 'off' }); }); // Turn off first
-            await waitFor(() => expect(result.current.isBluetoothOn).toBe(false)); // Wait for state change
-            await act(async () => { await result.current.promptEnableBluetooth(); });
-            expect(mockBleManager.enableBluetooth).toHaveBeenCalledTimes(1);
-         });
+    try {
+        let allGranted = true;
+        let finalStatuses: Record<string, PermissionStatus> = {};
 
-         it('promptEnableBluetooth throws if user denies on Android', async () => {
-            mockBleManager.enableBluetooth.mockRejectedValueOnce(new Error('User cancelled'));
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await act(async () => { emitBleManagerEvent('BleManagerDidUpdateState', { state: 'off' }); });
-            await waitFor(() => expect(result.current.isBluetoothOn).toBe(false));
-            await expect(result.current.promptEnableBluetooth()).rejects.toThrow('Failed to enable Bluetooth: User cancelled');
-         });
-
-         it('promptEnableBluetooth does nothing on iOS', async () => {
-             Object.defineProperty(Platform, 'OS', { get: () => 'ios' });
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-             await act(async () => { emitBleManagerEvent('BleManagerDidUpdateState', { state: 'off' }); });
-             await waitFor(() => expect(result.current.isBluetoothOn).toBe(false));
-             await act(async () => { await result.current.promptEnableBluetooth(); });
-             expect(mockBleManager.enableBluetooth).not.toHaveBeenCalled();
-         });
-    });
-
-    // --- Scanning ---
-    describe('Scanning', () => {
-        beforeEach(async () => {
-            // Ensure permissions are granted for scanning tests
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            // Need to render hook here to set initial state, but discard result
-            await act(async () => { await result.current.checkPermissions(); });
-        });
-
-        it('scanDevices starts scanning, updates state, and resolves on stop', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-
-            await act(async () => {
-                const scanPromise = result.current.scanDevices(1000);
-                // Check intermediate state immediately
-                expect(result.current.isScanning).toBe(true);
-                expect(mockBleManager.scan).toHaveBeenCalledWith([], 1, false);
-                // Simulate stop event
-                emitBleManagerEvent('BleManagerStopScan', undefined);
-                await scanPromise; // Wait for resolution
-            });
-
-            expect(result.current.isScanning).toBe(false);
-        });
-
-        it('scanDevices resolves promise when BleManagerStopScan is emitted', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            let scanPromise: Promise<void> | null = null;
-            act(() => { scanPromise = result.current.scanDevices(1000); });
-            expect(result.current.isScanning).toBe(true);
-            act(() => { emitBleManagerEvent('BleManagerStopScan', undefined); });
-            await expect(scanPromise).resolves.toBeUndefined();
-            expect(result.current.isScanning).toBe(false);
-        });
-
-        it('scanDevices adds discovered devices with heuristic', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await act(async () => {
-                const scanPromise = result.current.scanDevices(1000);
-                const mockDevice1 = createMockPeripheral('DEV1', 'OBD_Device');
-                const mockDevice2 = createMockPeripheral('DEV2', 'Some Other Device');
-                const mockDevice3 = createMockPeripheral('DEV3', 'VLINKER');
-
-                act(() => { emitBleManagerEvent('BleManagerDiscoverPeripheral', mockDevice1); });
-                act(() => { emitBleManagerEvent('BleManagerDiscoverPeripheral', mockDevice2); });
-                act(() => { emitBleManagerEvent('BleManagerDiscoverPeripheral', mockDevice3); });
-
-                await waitFor(() => expect(result.current.discoveredDevices).toHaveLength(3));
-
-                emitBleManagerEvent('BleManagerStopScan', undefined);
-                await scanPromise;
-            });
-            expect(result.current.discoveredDevices.find(d=>d.id==='DEV1')?.isLikelyOBD).toBe(true);
-            expect(result.current.discoveredDevices.find(d=>d.id==='DEV2')?.isLikelyOBD).toBe(false);
-            expect(result.current.discoveredDevices.find(d=>d.id==='DEV3')?.isLikelyOBD).toBe(true);
-        });
-
-        it('scanDevices rejects if Bluetooth is off', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await act(async () => { emitBleManagerEvent('BleManagerDidUpdateState', { state: 'off' }); });
-            await waitFor(() => expect(result.current.isBluetoothOn).toBe(false));
-            await expect(result.current.scanDevices()).rejects.toThrow('Bluetooth is off.');
-        });
-
-        it('scanDevices rejects if permissions missing', async () => {
-            mockPermissions.checkMultiple.mockResolvedValueOnce({ [Permissions.PERMISSIONS.ANDROID.BLUETOOTH_SCAN]: mockRESULTS.DENIED } as any);
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await act(async () => { await result.current.checkPermissions(); }); // Set hasPermissions to false
-            expect(result.current.hasPermissions).toBe(false);
-            await expect(result.current.scanDevices()).rejects.toThrow('Permissions missing.');
-        });
-
-        it('scanDevices rejects on BleManager.scan error', async () => {
-            mockBleManager.scan.mockRejectedValueOnce(new Error('Scan failed internally'));
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            // Assume permissions ok from beforeEach
-            await expect(result.current.scanDevices()).rejects.toThrow('Scan failed internally');
-            expect(result.current.isScanning).toBe(false);
-            expect(result.current.error).toBeInstanceOf(Error);
-        });
-    });
-
-    // --- Connection ---
-    describe('Connection', () => {
-        const deviceId = 'ELM327-1';
-        const stdConfig = KNOWN_ELM327_TARGETS[0];
-        const vlinkerConfig = KNOWN_ELM327_TARGETS.find(t => t.name === 'VLinker Pattern')!;
-
-        const setupMockDeviceServices = (id: string, config: typeof stdConfig | typeof vlinkerConfig) => {
-             const services = [{ uuid: config.serviceUUID }]; const characteristics = [ { service: config.serviceUUID, characteristic: config.writeCharacteristicUUID, properties: config.writeType === 'Write' ? { Write: 'Write', Notify: 'Notify' } : { WriteWithoutResponse: 'WriteWithoutResponse', Notify: 'Notify' } }, { service: config.serviceUUID, characteristic: config.notifyCharacteristicUUID, properties: config.writeType === 'Write' ? { Write: 'Write', Notify: 'Notify' } : { WriteWithoutResponse: 'WriteWithoutResponse', Notify: 'Notify' } } ]; mockBleManager.retrieveServices.mockResolvedValue( createMockPeripheral(id, 'Device', services, characteristics) );
-        };
-
-        beforeEach(async () => {
-            // Ensure permissions are granted for connection tests
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await act(async () => { await result.current.checkPermissions(); });
-        });
-
-        it('connectToDevice succeeds (WriteWithoutResponse)', async () => {
-            setupMockDeviceServices(deviceId, stdConfig);
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await act(async () => { await result.current.connectToDevice(deviceId); });
-            expect(result.current.isConnecting).toBe(false); expect(result.current.connectedDevice?.id).toBe(deviceId); expect(result.current.activeDeviceConfig?.serviceUUID).toBe(stdConfig.serviceUUID); expect(result.current.activeDeviceConfig?.writeType).toBe('WriteWithoutResponse'); expect(mockBleManager.connect).toHaveBeenCalledWith(deviceId); expect(mockBleManager.retrieveServices).toHaveBeenCalledWith(deviceId); expect(mockBleManager.startNotification).toHaveBeenCalledWith(deviceId, stdConfig.serviceUUID, stdConfig.notifyCharacteristicUUID);
-        });
-
-        it('connectToDevice succeeds (Write)', async () => {
-            setupMockDeviceServices(deviceId, vlinkerConfig);
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await act(async () => { await result.current.connectToDevice(deviceId); });
-            expect(result.current.activeDeviceConfig?.writeType).toBe('Write');
-        });
-
-        it('connectToDevice fails if no compatible service/char found', async () => {
-            mockBleManager.retrieveServices.mockResolvedValueOnce(createMockPeripheral(deviceId, 'WrongDevice', [{ uuid: 'wrong-uuid' }], []));
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await expect(result.current.connectToDevice(deviceId)).rejects.toThrow('Incompatible OBD device');
-            expect(result.current.isConnecting).toBe(false); expect(result.current.connectedDevice).toBeNull(); expect(mockBleManager.disconnect).toHaveBeenCalledWith(deviceId);
-        });
-
-        it('connectToDevice rejects if BleManager.connect fails', async () => {
-             mockBleManager.connect.mockRejectedValueOnce(new Error('Connection timed out'));
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-             await expect(result.current.connectToDevice(deviceId)).rejects.toThrow('Connection timed out');
-             expect(result.current.isConnecting).toBe(false); expect(mockBleManager.disconnect).not.toHaveBeenCalled();
-        });
-
-        it('connectToDevice rejects if retrieveServices fails', async () => {
-             mockBleManager.retrieveServices.mockRejectedValueOnce(new Error('Failed to get services'));
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-             await expect(result.current.connectToDevice(deviceId)).rejects.toThrow('Failed to get services');
-             expect(result.current.isConnecting).toBe(false); expect(mockBleManager.disconnect).toHaveBeenCalledWith(deviceId);
-        });
-
-         it('connectToDevice rejects if startNotification fails', async () => {
-             setupMockDeviceServices(deviceId, stdConfig);
-             mockBleManager.startNotification.mockRejectedValueOnce(new Error('Cannot start notify'));
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-             await expect(result.current.connectToDevice(deviceId)).rejects.toThrow('Cannot start notify');
-             expect(result.current.isConnecting).toBe(false); expect(mockBleManager.disconnect).toHaveBeenCalledWith(deviceId);
-         });
-
-        it('connectToDevice rejects if already connecting', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            mockBleManager.connect.mockReturnValueOnce(new Promise(() => {})); // Pending promise
-            act(() => { result.current.connectToDevice(deviceId); }); // Don't await
-            expect(result.current.isConnecting).toBe(true);
-            await expect(result.current.connectToDevice('anotherID')).rejects.toThrow('Connection already in progress');
-        });
-
-        it('connectToDevice rejects if connected to different device', async () => {
-             setupMockDeviceServices('OTHER_DEV', stdConfig);
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-             await act(async () => { await result.current.connectToDevice('OTHER_DEV'); });
-             expect(result.current.connectedDevice?.id).toBe('OTHER_DEV');
-             await expect(result.current.connectToDevice(deviceId)).rejects.toThrow('Already connected to a different device');
-        });
-
-         it('connectToDevice returns existing device if already connected to same ID', async () => {
-             setupMockDeviceServices(deviceId, stdConfig);
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-             await act(async () => { await result.current.connectToDevice(deviceId); });
-             expect(result.current.connectedDevice?.id).toBe(deviceId);
-             let returnedDevice: Peripheral | null = null;
-             await act(async () => { returnedDevice = await result.current.connectToDevice(deviceId); }); // Call again
-             expect(returnedDevice?.id).toBe(deviceId);
-             expect(mockBleManager.connect).toHaveBeenCalledTimes(1); // Connect only called once
-         });
-    });
-
-    // --- Disconnection ---
-    describe('Disconnection', () => {
-        const deviceId = 'ELM327-Disc';
-        const config = KNOWN_ELM327_TARGETS[0];
-        async function setupConnectedState(result: any) {
-             const services = [{ uuid: config.serviceUUID }]; const characteristics = [{ service: config.serviceUUID, characteristic: config.writeCharacteristicUUID, properties: { WriteWithoutResponse: 'WriteWithoutResponse', Notify: 'Notify' } }, { service: config.serviceUUID, characteristic: config.notifyCharacteristicUUID, properties: { WriteWithoutResponse: 'WriteWithoutResponse', Notify: 'Notify' } }]; mockBleManager.retrieveServices.mockResolvedValue(createMockPeripheral(deviceId, 'ConnectedDev', services, characteristics)); await act(async () => { await result.current.checkPermissions(); await result.current.connectToDevice(deviceId); }); expect(result.current.connectedDevice?.id).toBe(deviceId);
+        // Request standard permissions first
+        if(permissionsToRequest.length > 0) {
+            const statuses = await Permissions.requestMultiple(permissionsToRequest);
+            finalStatuses = {...statuses};
+            allGranted = permissionsToRequest.every(
+                (permission) => statuses[permission] === Permissions.RESULTS.GRANTED
+            );
+            console.info('[useBluetooth] Standard permission request results:', statuses);
         }
 
-        it('disconnect successfully calls methods, resolves, and updates state via event', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await setupConnectedState(result);
-            await act(async () => {
-                const disconnectPromise = result.current.disconnect();
-                expect(mockBleManager.stopNotification).toHaveBeenCalledWith(deviceId, config.serviceUUID, config.notifyCharacteristicUUID);
-                expect(mockBleManager.disconnect).toHaveBeenCalledWith(deviceId);
-                // Simulate event *before* awaiting promise from hook
-                emitBleManagerEvent('BleManagerDisconnectPeripheral', { peripheral: deviceId });
-                await disconnectPromise;
-            });
-            expect(result.current.isDisconnecting).toBe(false);
-            // Check state potentially updated by event
-             await waitFor(() => expect(result.current.connectedDevice).toBeNull());
-            expect(result.current.activeDeviceConfig).toBeNull();
-        });
-
-        it('handles unexpected disconnect event correctly', async () => {
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await setupConnectedState(result);
-             await act(async () => { emitBleManagerEvent('BleManagerDisconnectPeripheral', { peripheral: deviceId, reason: 'TIMEOUT' }); });
-             await waitFor(() => expect(result.current.connectedDevice).toBeNull());
-             expect(result.current.activeDeviceConfig).toBeNull();
-             expect(result.current.isStreaming).toBe(false);
-        });
-
-        it('disconnect does nothing if not connected', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await act(async () => { await result.current.disconnect(); });
-            expect(mockBleManager.stopNotification).not.toHaveBeenCalled();
-            expect(mockBleManager.disconnect).not.toHaveBeenCalled();
-            expect(result.current.isDisconnecting).toBe(false);
-        });
-
-        it('disconnect rejects on BleManager.disconnect error', async () => {
-            mockBleManager.disconnect.mockRejectedValueOnce(new Error('Disconnect HW error'));
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await setupConnectedState(result);
-            await expect(result.current.disconnect()).rejects.toThrow('Disconnect HW error');
-            expect(result.current.isDisconnecting).toBe(false);
-            expect(result.current.error).toBeInstanceOf(Error);
-            expect(result.current.connectedDevice?.id).toBe(deviceId); // Still connected in state
-        });
-    });
-
-    // --- Commands ---
-    describe('Commands', () => {
-        const deviceId = 'ELM327-Cmd';
-        const stdConfig = KNOWN_ELM327_TARGETS[0];
-        const vlinkerConfig = KNOWN_ELM327_TARGETS.find(t => t.name === 'VLinker Pattern')!;
-
-        async function setupConnectedState(result: any, config = stdConfig) {
-             const services = [{ uuid: config.serviceUUID }]; const characteristics = [ { service: config.serviceUUID, characteristic: config.writeCharacteristicUUID, properties: config.writeType === 'Write' ? { Write: 'Write', Notify: 'Notify'} : { WriteWithoutResponse: 'WriteWithoutResponse', Notify: 'Notify' } }, { service: config.serviceUUID, characteristic: config.notifyCharacteristicUUID, properties: config.writeType === 'Write' ? { Write: 'Write', Notify: 'Notify'} : { WriteWithoutResponse: 'WriteWithoutResponse', Notify: 'Notify' } } ]; mockBleManager.retrieveServices.mockResolvedValue(createMockPeripheral(deviceId, 'CmdDev', services, characteristics)); await act(async () => { await result.current.checkPermissions(); await result.current.connectToDevice(deviceId); }); expect(result.current.connectedDevice?.id).toBe(deviceId); expect(result.current.activeDeviceConfig?.writeType).toBe(config.writeType);
+        // Request iOS Bluetooth separately if needed
+        let iosBluetoothGranted = true;
+        if (Platform.OS === 'ios' && iosBlePermissionNeeded) {
+            console.info('[useBluetooth] Requesting iOS Bluetooth permission...');
+            const bleStatus = await Permissions.request(Permissions.PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL);
+            finalStatuses[Permissions.PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL] = bleStatus;
+            iosBluetoothGranted = bleStatus === Permissions.RESULTS.GRANTED || 
+                                 bleStatus === Permissions.RESULTS.UNAVAILABLE;
+            console.info(`[useBluetooth] iOS Bluetooth request result: ${bleStatus}`);
         }
 
-        it('sendCommand sends command and receives string response', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await setupConnectedState(result, stdConfig);
-            const command = 'ATZ'; const expectedBytes = Array.from(new TextEncoder().encode(command + ELM327_COMMAND_TERMINATOR)); const responseString = 'ELM327 v1.5'; const responseBytesWithPrompt = [...Array.from(new TextEncoder().encode(responseString)), ELM327_PROMPT_BYTE];
-            let commandPromise: Promise<string> | null = null;
-            await act(async () => {
-                 commandPromise = result.current.sendCommand(command);
-                 await new Promise(setImmediate); // Allow async mock calls if any
-                 expect(result.current.isAwaitingResponse).toBe(true);
-                 expect(mockBleManager.writeWithoutResponse).toHaveBeenCalledWith(deviceId, stdConfig.serviceUUID, stdConfig.writeCharacteristicUUID, expectedBytes);
-                 emitBleManagerEvent('BleManagerDidUpdateValueForCharacteristic', { value: responseBytesWithPrompt });
-            });
-            await expect(commandPromise).resolves.toBe(responseString);
-            expect(result.current.isAwaitingResponse).toBe(false); expect(result.current.lastSuccessfulCommandTimestamp).toBe(MOCK_DATE_NOW);
-        });
+        const finalGranted = allGranted && iosBluetoothGranted;
 
-        it('handles multi-chunk responses correctly', async () => {
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await setupConnectedState(result, stdConfig);
-            const command = '0100'; const responseString = '41 00 BE 1F B8 10'; const chunk1 = Array.from(new TextEncoder().encode('41 00 BE ')); const chunk2 = Array.from(new TextEncoder().encode('1F B8 10')); const prompt = [ELM327_PROMPT_BYTE];
-            let commandPromise: Promise<string> | null = null;
-            await act(async () => {
-                commandPromise = result.current.sendCommand(command);
-                await new Promise(setImmediate);
-                expect(result.current.isAwaitingResponse).toBe(true);
-                // Emit chunks - no need for nested act if events are sync for the test
-                emitBleManagerEvent('BleManagerDidUpdateValueForCharacteristic', { value: chunk1 });
-                emitBleManagerEvent('BleManagerDidUpdateValueForCharacteristic', { value: chunk2 });
-                emitBleManagerEvent('BleManagerDidUpdateValueForCharacteristic', { value: prompt });
-            });
-             await expect(commandPromise).resolves.toBe(responseString);
-             expect(result.current.isAwaitingResponse).toBe(false);
-        });
+        console.info(`[useBluetooth] Overall permission request result: ${finalGranted}`, finalStatuses);
+        dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: finalGranted });
 
-        it('sendCommand uses Write method if configured', async () => {
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await setupConnectedState(result, vlinkerConfig);
-            const command = '010C'; const expectedBytes = Array.from(new TextEncoder().encode(command + ELM327_COMMAND_TERMINATOR));
-            // Using act for the hook call and await for potential internal async before mock check
-            await act(async () => {
-                result.current.sendCommand(command).catch(()=>{/* Ignore */}); // Don't await result here
-                await new Promise(setImmediate); // Ensure internal async ops complete
-            });
-            expect(mockBleManager.write).toHaveBeenCalledWith(deviceId, vlinkerConfig.serviceUUID, vlinkerConfig.writeCharacteristicUUID, expectedBytes);
-            expect(mockBleManager.writeWithoutResponse).not.toHaveBeenCalled();
-            // Cleanup: fake response
-            await act(async () => { emitBleManagerEvent('BleManagerDidUpdateValueForCharacteristic', { value: [ELM327_PROMPT_BYTE] }); });
-             await waitFor(() => expect(result.current.isAwaitingResponse).toBe(false)); // Wait for state reset
-         });
-
-        // --- Timeout Test needs Fake Timers ---
-        // Re-enable fake timers just for this test if they cause issues elsewhere
-        describe('with Fake Timers', () => {
-             beforeAll(() => { jest.useFakeTimers(); });
-             afterAll(() => { jest.useRealTimers(); }); // Switch back after
-             beforeEach(() => { jest.clearAllTimers(); }); // Clear before each
-
-             it('sendCommand times out correctly', async () => {
-                 const { result } = renderHook(() => useBluetooth(), { wrapper });
-                 await setupConnectedState(result, stdConfig);
-                 const command = 'AT L0'; let commandPromise: Promise<string> | null = null;
-                 await act(async () => {
-                     commandPromise = result.current.sendCommand(command, { timeout: 100 });
-                     expect(result.current.isAwaitingResponse).toBe(true);
-                     // Advance timers *within act*
-                     jest.advanceTimersByTime(150);
-                 });
-                 await expect(commandPromise).rejects.toThrow(`Command "${command}" timed out`);
-                 expect(result.current.isAwaitingResponse).toBe(false); expect(result.current.error?.message).toContain('timed out');
-             });
-        }); // End fake timer scope
-
-        it('sendCommand rejects on BleManager write error', async () => {
-            mockBleManager.writeWithoutResponse.mockRejectedValueOnce(new Error('Write failed'));
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await setupConnectedState(result, stdConfig);
-            await expect(result.current.sendCommand('ATZ')).rejects.toThrow('Write failed');
-            expect(result.current.isAwaitingResponse).toBe(false);
-        });
-
-        it('sendCommand rejects if not connected', async () => {
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-             await expect(result.current.sendCommand('ATZ')).rejects.toThrow('Not connected');
-        });
-
-        it('sendCommand rejects if another command is pending', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await setupConnectedState(result, stdConfig);
-            act(() => { result.current.sendCommand('ATZ').catch(() => {}); });
-            await waitFor(() => expect(result.current.isAwaitingResponse).toBe(true));
-            await expect(result.current.sendCommand('ATE0')).rejects.toThrow('Command in progress');
-            // Cleanup
-            await act(async () => { emitBleManagerEvent('BleManagerDidUpdateValueForCharacteristic', { value: [ELM327_PROMPT_BYTE] }); });
-            await waitFor(() => expect(result.current.isAwaitingResponse).toBe(false));
-        });
-
-        it('sendCommandRaw sends command and receives byte response', async () => {
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await setupConnectedState(result, stdConfig);
-            const command = 'ATDPN'; const responseBytesRaw = [0x41, 0x36]; const responseBytesWithPrompt = [...responseBytesRaw, ELM327_PROMPT_BYTE];
-            let commandPromise: Promise<Uint8Array> | null = null;
-            await act(async () => {
-                commandPromise = result.current.sendCommandRaw(command);
-                await new Promise(setImmediate);
-                emitBleManagerEvent('BleManagerDidUpdateValueForCharacteristic', { value: responseBytesWithPrompt });
-            });
-            await expect(commandPromise).resolves.toEqual(Uint8Array.from(responseBytesRaw));
-            expect(result.current.isAwaitingResponse).toBe(false);
-        });
-
-        it('rejects command if disconnected during wait', async () => {
-            const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await setupConnectedState(result, stdConfig);
-            const command = '0100'; let commandPromise: Promise<string> | null = null;
-            await act(async () => {
-                commandPromise = result.current.sendCommand(command);
-                await new Promise(setImmediate);
-                expect(result.current.isAwaitingResponse).toBe(true);
-                emitBleManagerEvent('BleManagerDisconnectPeripheral', { peripheral: deviceId }); // Disconnect before response
-            });
-            await expect(commandPromise).rejects.toThrow('Device disconnected during command.');
-            expect(result.current.isAwaitingResponse).toBe(false);
-        });
-    });
-
-    // --- Streaming ---
-    describe('Streaming', () => {
-        const deviceId = 'ELM327-Stream';
-        const config = KNOWN_ELM327_TARGETS[0];
-        async function setupConnectedState(result: any) {
-             const services = [{ uuid: config.serviceUUID }]; const characteristics = [{ service: config.serviceUUID, characteristic: config.writeCharacteristicUUID, properties: { WriteWithoutResponse: 'WriteWithoutResponse', Notify: 'Notify' } }, { service: config.serviceUUID, characteristic: config.notifyCharacteristicUUID, properties: { WriteWithoutResponse: 'WriteWithoutResponse', Notify: 'Notify' } }]; mockBleManager.retrieveServices.mockResolvedValue(createMockPeripheral(deviceId, 'StreamDev', services, characteristics)); await act(async () => { await result.current.checkPermissions(); await result.current.connectToDevice(deviceId); }); expect(result.current.connectedDevice?.id).toBe(deviceId);
+        if (!finalGranted) {
+            console.warn('[useBluetooth] Not all required permissions were granted.');
+            const blocked = Object.values(finalStatuses).some(
+                status => status === Permissions.RESULTS.BLOCKED
+            );
+            if (blocked) {
+                console.error('[useBluetooth] One or more permissions are blocked. User must enable them in Settings.');
+            }
         }
 
-        it('setStreaming updates state', async () => {
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await setupConnectedState(result);
-             expect(result.current.isStreaming).toBe(false);
-             act(() => { result.current.setStreaming(true); });
-             expect(result.current.isStreaming).toBe(true); expect(result.current.lastSuccessfulCommandTimestamp).toBe(MOCK_DATE_NOW);
-             act(() => { result.current.setStreaming(false); });
-             expect(result.current.isStreaming).toBe(false); expect(result.current.lastSuccessfulCommandTimestamp).toBe(null);
-        });
+        return finalGranted;
 
-        it('setStreaming(true) prevents starting if not connected', async () => {
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-             const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-             act(() => { result.current.setStreaming(true); });
-             expect(result.current.isStreaming).toBe(false);
-             expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Cannot start streaming'));
-             consoleErrorSpy.mockRestore();
-        });
-
-        // --- Timeout Test needs Fake Timers ---
-        describe('with Fake Timers', () => {
-             beforeAll(() => { jest.useFakeTimers(); });
-             afterAll(() => { jest.useRealTimers(); });
-             beforeEach(() => { jest.clearAllTimers(); });
-
-             it('automatically stops streaming due to inactivity', async () => {
-                 const { result } = renderHook(() => useBluetooth(), { wrapper });
-                 await setupConnectedState(result);
-                 act(() => { result.current.setStreaming(true); });
-                 expect(result.current.isStreaming).toBe(true);
-                 // Advance timers within act
-                 await act(async () => { jest.advanceTimersByTime(DEFAULT_STREAMING_INACTIVITY_TIMEOUT + 1100); });
-                 await waitFor(() => expect(result.current.isStreaming).toBe(false)); // Wait for state update from timer
-                 expect(result.current.lastSuccessfulCommandTimestamp).toBeNull();
-                 expect(result.current.error?.message).toContain('Streaming stopped due to inactivity');
-             });
-
-             it('inactivity timer resets on successful command', async () => {
-                 const { result } = renderHook(() => useBluetooth(), { wrapper });
-                 await setupConnectedState(result);
-                 act(() => { result.current.setStreaming(true); });
-                 const firstTimestamp = result.current.lastSuccessfulCommandTimestamp;
-
-                 await act(async () => { jest.advanceTimersByTime(DEFAULT_STREAMING_INACTIVITY_TIMEOUT - 500); });
-                 expect(result.current.isStreaming).toBe(true);
-
-                 // Simulate successful command
-                 const command = 'ATZ'; const responseString = 'OK'; const responseBytesWithPrompt = [...Array.from(new TextEncoder().encode(responseString)), ELM327_PROMPT_BYTE];
-                 await act(async () => {
-                     const cmdPromise = result.current.sendCommand(command);
-                     await new Promise(setImmediate);
-                     emitBleManagerEvent('BleManagerDidUpdateValueForCharacteristic', { value: responseBytesWithPrompt });
-                     await cmdPromise;
-                 });
-
-                 expect(result.current.isStreaming).toBe(true);
-                 expect(result.current.lastSuccessfulCommandTimestamp).toBe(MOCK_DATE_NOW);
-                 expect(result.current.lastSuccessfulCommandTimestamp).not.toBe(firstTimestamp);
-
-                 // Advance time again, but less than timeout
-                 await act(async () => { jest.advanceTimersByTime(DEFAULT_STREAMING_INACTIVITY_TIMEOUT - 500); });
-                 expect(result.current.isStreaming).toBe(true); // Still streaming
-             });
-        }); // End fake timer scope
+    } catch (error) {
+        console.error('[useBluetooth] Permission request failed:', error);
+        dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: false });
+        dispatch({ type: 'SET_ERROR', payload: error as Error });
+        return false;
+    }
+  }, [dispatch]);
 
 
-        it('streaming stops on disconnect', async () => {
-             const { result } = renderHook(() => useBluetooth(), { wrapper });
-            await setupConnectedState(result);
-            act(() => { result.current.setStreaming(true); });
-            expect(result.current.isStreaming).toBe(true);
-            // Simulate disconnect
-            await act(async () => { emitBleManagerEvent('BleManagerDisconnectPeripheral', { peripheral: deviceId }); });
-            await waitFor(() => expect(result.current.connectedDevice).toBeNull());
-            expect(result.current.isStreaming).toBe(false); // Reducer should handle this
-        });
-    });
+  const promptEnableBluetooth = useCallback(async (): Promise<void> => {
+    if (state.isBluetoothOn) {
+        console.info('[useBluetooth] Bluetooth is already enabled.');
+        return; // No need to prompt if already on
+    }
 
-}); // End main describe block
+    if (Platform.OS === 'android') {
+        try {
+            console.info('[useBluetooth] Requesting user to enable Bluetooth via native prompt...');
+            // This typically shows a system dialog on Android
+            await BleManager.enableBluetooth();
+            console.info('[useBluetooth] Bluetooth enable request prompt shown (or Bluetooth enabled).');
+            // The actual state change (isBluetoothOn = true) will be triggered
+            // by the BleManagerDidUpdateState listener if the user accepts.
+        } catch (error) {
+            // Handle common errors, e.g., user denying the prompt
+            console.error('[useBluetooth] Failed to request Bluetooth enable (e.g., user denied):', error);
+            throw new Error(`Failed to enable Bluetooth: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    } else if (Platform.OS === 'ios') {
+        // On iOS, there's no programmatic way to trigger the enable prompt.
+        console.warn('[useBluetooth] promptEnableBluetooth() has no effect on iOS. Guide user to Settings/Control Center.');
+        return Promise.resolve();
+    }
+  }, [state.isBluetoothOn]);
+
+
+  // --- Scanning Functions ---
+
+  const scanDevices = useCallback(async (scanDurationMs = 5000): Promise<void> => {
+    if (!state.isBluetoothOn) {
+        throw new Error('Bluetooth is currently turned off.');
+    }
+    if (!state.hasPermissions) {
+        throw new Error('Required Bluetooth/Location permissions are not granted.');
+    }
+    if (state.isScanning) {
+        console.warn('[useBluetooth] Scan already in progress.');
+        // Option 1: Throw error
+        // throw new Error('Scan already in progress.');
+        // Option 2: Return existing promise (if available) or just return
+        return scanPromiseRef.current?.promise ?? Promise.resolve();
+    }
+
+    console.info(`[useBluetooth] Starting BLE scan for ${scanDurationMs}ms...`);
+    dispatch({ type: 'SCAN_START' });
+
+    // Create a deferred promise that the Provider's listener can resolve/reject
+    scanPromiseRef.current = createDeferredPromise<void>();
+
+    try {
+        const scanSeconds = Math.max(1, Math.round(scanDurationMs / 1000));
+        const timeoutId = setTimeout(async () => {
+            if (state.isScanning) {
+                console.warn('[useBluetooth] Scan timed out.');
+                try {
+                    // Force stop scan if timeout occurs
+                    await BleManager.stopScan();
+                } catch (stopError) {
+                    console.error('[useBluetooth] Error stopping scan on timeout:', stopError);
+                }
+                // Provider will handle state update via BleManagerStopScan event
+            }
+        }, scanDurationMs + 1000); // Add 1s buffer
+
+        // Start scan
+        await BleManager.scan([], scanSeconds, false);
+        console.info('[useBluetooth] BleManager.scan initiated.');
+
+        // Wait for completion (resolved by BleManagerStopScan event in Provider)
+        await scanPromiseRef.current.promise;
+        clearTimeout(timeoutId);
+
+    } catch (error) {
+        console.error('[useBluetooth] Scan error:', error);
+        // Cleanup
+        if (state.isScanning) {
+            try {
+                await BleManager.stopScan();
+            } catch (stopError) {
+                console.error('[useBluetooth] Error stopping scan after failure:', stopError);
+            }
+        }
+        dispatch({ type: 'SET_ERROR', payload: error as BleError | Error });
+        dispatch({ type: 'SCAN_STOP' });
+        if (scanPromiseRef.current) {
+            scanPromiseRef.current.reject(error);
+            scanPromiseRef.current = null;
+        }
+        throw error;
+    }
+
+    return scanPromiseRef.current?.promise;
+  }, [state.isBluetoothOn, state.hasPermissions, state.isScanning, dispatch]);
+
+  // --- Connection Functions ---
+
+  const connectToDevice = useCallback(async (deviceId: string): Promise<Peripheral> => {
+    if (state.isConnecting) {
+        throw new Error('Connection already in progress.');
+    }
+    if (state.connectedDevice) {
+        if (state.connectedDevice.id === deviceId) {
+            console.warn(`[useBluetooth] Already connected to device ${deviceId}.`);
+            return state.connectedDevice;
+        } else {
+            throw new Error(`Already connected to a different device (${state.connectedDevice.id}). Disconnect first.`);
+        }
+    }
+
+    console.info(`[useBluetooth] Attempting connection to ${deviceId}...`);
+    dispatch({ type: 'CONNECT_START' });
+
+    // Create deferred promise
+    connectPromiseRef.current = createDeferredPromise<Peripheral>();
+
+    try {
+        // --- Internal Connection Logic ---
+        // 1. Connect
+        await BleManager.connect(deviceId);
+        console.info(`[useBluetooth] Peripheral ${deviceId} connected. Retrieving services...`);
+
+        // 2. Retrieve Services & Characteristics
+        const peripheralInfo = await BleManager.retrieveServices(deviceId);
+        console.info(`[useBluetooth] Services retrieved for ${deviceId}. Found:`, 
+          peripheralInfo.services?.map((s: { uuid: string }) => s.uuid));
+        if (!peripheralInfo.services || peripheralInfo.services.length === 0) {
+            throw new Error('No services found on this device.');
+        }
+
+        // 3. Find Compatible ELM327 Target
+        let foundConfig: ActiveDeviceConfig | null = null;
+        for (const target of KNOWN_ELM327_TARGETS) {
+            const serviceUUIDUpper = target.serviceUUID.toUpperCase();
+            const writeCharUUIDUpper = target.writeCharacteristicUUID.toUpperCase();
+            const notifyCharUUIDUpper = target.notifyCharacteristicUUID.toUpperCase();
+
+            const foundService = peripheralInfo.services?.find(
+              (s: { uuid: string }) => s.uuid.toUpperCase() === serviceUUIDUpper,
+            );
+
+            if (foundService) {
+                console.info(`[useBluetooth] Found matching service: ${target.name} (${target.serviceUUID})`);
+                // Check characteristics *within the peripheralInfo object* first
+                const characteristics = peripheralInfo.characteristics?.filter(
+                  (c: { service: string }) => c.service.toUpperCase() === serviceUUIDUpper
+                ) ?? [];
+
+                const writeCharacteristic = characteristics.find(
+                  (c: { characteristic: string }) => c.characteristic.toUpperCase() === writeCharUUIDUpper
+                );
+                const notifyCharacteristic = characteristics.find(
+                  (c: { characteristic: string }) => c.characteristic.toUpperCase() === notifyCharUUIDUpper
+                );
+
+                if (writeCharacteristic && notifyCharacteristic) {
+                    console.info(`[useBluetooth] Found matching Write (${writeCharUUIDUpper}) and Notify (${notifyCharUUIDUpper}) characteristics.`);
+
+                    // Determine Write Type
+                    let writeType: ActiveDeviceConfig['writeType'] = 'WriteWithoutResponse'; // Default
+                    if (writeCharacteristic.properties.Write) { // Check for 'Write' (with response) property
+                        writeType = 'Write';
+                        console.info("[useBluetooth] Characteristic supports Write (with response).");
+                    } else {
+                        console.info("[useBluetooth] Characteristic supports Write Without Response.");
+                    }
+
+                    // 4. Start Notifications
+                    console.info(`[useBluetooth] Starting notifications for ${notifyCharUUIDUpper}...`);
+                    await BleManager.startNotification(deviceId, target.serviceUUID, target.notifyCharacteristicUUID);
+                    console.info(`[useBluetooth] Notifications started for ${notifyCharUUIDUpper}.`);
+
+                    foundConfig = {
+                        serviceUUID: target.serviceUUID,
+                        writeCharacteristicUUID: target.writeCharacteristicUUID,
+                        notifyCharacteristicUUID: target.notifyCharacteristicUUID,
+                        writeType: writeType,
+                    };
+                    break; // Found a compatible configuration
+                } else {
+                    console.info(`[useBluetooth] Service ${target.serviceUUID} found, but required characteristics not present/found.`);
+                }
+            }
+        } // End loop through known targets
+
+        // 5. Handle Connection Result
+        if (foundConfig) {
+            console.info(`[useBluetooth] Compatible configuration found and notifications started. Connection successful to ${deviceId}.`);
+            dispatch({
+                type: 'CONNECT_SUCCESS',
+                payload: { device: peripheralInfo, config: foundConfig },
+            });
+            connectPromiseRef.current?.resolve(peripheralInfo);
+            connectPromiseRef.current = null; // Clear ref
+            return peripheralInfo;
+        } else {
+            console.error('[useBluetooth] Connection failed: No compatible ELM327 service/characteristic configuration found.');
+            throw new Error('Incompatible OBD device or required services not found.');
+        }
+
+    } catch (error) {
+        console.error(`[useBluetooth] Connection process failed for ${deviceId}:`, error);
+        dispatch({ type: 'CONNECT_FAILURE', payload: error as BleError | Error });
+        // Attempt cleanup: disconnect if possible
+        try {
+            await BleManager.disconnect(deviceId);
+            console.info(`[useBluetooth] Disconnected device ${deviceId} after connection failure.`);
+        } catch (disconnectError) {
+            console.error(`[useBluetooth] Error disconnecting after connection failure for ${deviceId}:`, disconnectError);
+        }
+        connectPromiseRef.current?.reject(error);
+        connectPromiseRef.current = null; // Clear ref
+        throw error; // Re-throw error
+    }
+  }, [state.isConnecting, state.connectedDevice, dispatch]);
+
+  // --- Disconnection Function ---
+
+  const disconnect = useCallback(async (): Promise<void> => {
+    if (state.isDisconnecting) {
+        console.warn('[useBluetooth] Disconnection already in progress.');
+        return disconnectPromiseRef.current?.promise ?? Promise.resolve();
+    }
+    if (!state.connectedDevice || !state.activeDeviceConfig) {
+      console.warn('[useBluetooth] No device currently connected.');
+      return Promise.resolve();
+    }
+
+    const deviceId = state.connectedDevice.id;
+    const config = state.activeDeviceConfig;
+    console.info(`[useBluetooth] Disconnecting from ${deviceId}...`);
+    dispatch({ type: 'DISCONNECT_START' });
+
+    // Create deferred promise
+    disconnectPromiseRef.current = createDeferredPromise<void>();
+
+    try {
+      // 1. Stop Notifications
+      console.info(`[useBluetooth] Stopping notifications for ${config.notifyCharacteristicUUID}...`);
+      await BleManager.stopNotification(deviceId, config.serviceUUID, config.notifyCharacteristicUUID);
+      console.info('[useBluetooth] Notifications stopped.');
+
+      // 2. Disconnect Peripheral
+      await BleManager.disconnect(deviceId);
+      console.info(`[useBluetooth] BleManager.disconnect called for ${deviceId}.`);
+
+      // Note: The DEVICE_DISCONNECTED action triggered by the BleManagerDisconnectPeripheral
+      // listener will handle the state update (setting connectedDevice to null, etc.)
+      // We resolve the promise here assuming the disconnect call initiated successfully.
+      // The listener acts as confirmation.
+      dispatch({ type: 'DISCONNECT_SUCCESS' }); // Optional: signal immediate success after call
+      disconnectPromiseRef.current?.resolve();
+
+    } catch (error) {
+      console.error(`[useBluetooth] Disconnect failed for ${deviceId}:`, error);
+      dispatch({ type: 'DISCONNECT_FAILURE', payload: error as BleError | Error });
+      disconnectPromiseRef.current?.reject(error);
+      throw error; // Re-throw
+    } finally {
+         disconnectPromiseRef.current = null; // Clear ref
+    }
+  }, [state.connectedDevice, state.activeDeviceConfig, state.isDisconnecting, dispatch]);
+
+
+  // --- Command Functions ---
+
+  const executeCommand = useCallback(async (
+    command: string,
+    returnType: 'string' | 'bytes',
+    options?: { timeout?: number }
+  ): Promise<string | Uint8Array> => {
+    if (!state.connectedDevice || !state.activeDeviceConfig) {
+      throw new Error('Not connected to a device.');
+    }
+    if (state.isAwaitingResponse) {
+      throw new Error('Another command is already in progress.');
+    }
+    if (currentCommandRef.current) {
+      console.warn('[useBluetooth] Stale command ref found - clearing.');
+      if(currentCommandRef.current.timeoutId) clearTimeout(currentCommandRef.current.timeoutId);
+      currentCommandRef.current.promise.reject(new Error("Command cancelled due to new command starting."));
+      currentCommandRef.current = null;
+    }
+
+    const config = state.activeDeviceConfig;
+    const deviceId = state.connectedDevice.id;
+    const commandTimeoutDuration = options?.timeout ?? DEFAULT_COMMAND_TIMEOUT;
+
+    console.info(`[useBluetooth] Sending command: "${command}" (Expect: ${returnType}, Timeout: ${commandTimeoutDuration}ms)`);
+
+    const deferredPromise = createDeferredPromise<string | Uint8Array>();
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    currentCommandRef.current = {
+      promise: deferredPromise,
+      timeoutId: null,
+      responseBuffer: [],
+      expectedReturnType: returnType,
+    };
+
+    dispatch({ type: 'SEND_COMMAND_START' });
+
+    timeoutId = setTimeout(() => {
+      if (currentCommandRef.current?.promise === deferredPromise) {
+        const error = new Error(`Command "${command}" timed out after ${commandTimeoutDuration}ms.`);
+        console.error(`[useBluetooth] ${error.message}`);
+        dispatch({ type: 'COMMAND_TIMEOUT' });
+        deferredPromise.reject(error);
+        currentCommandRef.current = null;
+      }
+    }, commandTimeoutDuration);
+
+    if(currentCommandRef.current) {
+      currentCommandRef.current.timeoutId = timeoutId;
+    }
+
+    try {
+      const commandString = command + ELM327_COMMAND_TERMINATOR;
+      const commandBytes = Array.from(new TextEncoder().encode(commandString));
+
+      if (config.writeType === 'Write') {
+        await BleManager.write(deviceId, config.serviceUUID, config.writeCharacteristicUUID, commandBytes);
+      } else {
+        await BleManager.writeWithoutResponse(deviceId, config.serviceUUID, config.writeCharacteristicUUID, commandBytes);
+      }
+      console.info(`[useBluetooth] Command "${command}" written. Waiting for response from Provider...`);
+
+      const response = await deferredPromise.promise;
+      return response;
+
+    } catch (error) {
+      console.error(`[useBluetooth] Error during command execution or processing "${command}":`, error);
+      if (currentCommandRef.current?.promise === deferredPromise && currentCommandRef.current.timeoutId) {
+        clearTimeout(currentCommandRef.current.timeoutId);
+      }
+      if (state.isAwaitingResponse && currentCommandRef.current?.promise === deferredPromise) {
+        dispatch({ type: 'COMMAND_FAILURE', payload: error as BleError | Error });
+      }
+      if (currentCommandRef.current?.promise === deferredPromise) {
+        currentCommandRef.current = null;
+      }
+      throw error;
+    }
+  }, [state.connectedDevice, state.activeDeviceConfig, state.isAwaitingResponse, dispatch, currentCommandRef]);
+
+  const sendCommand = useCallback(async (command: string, options?: { timeout?: number }): Promise<string> => {
+    const result = await executeCommand(command, 'string', options);
+    if (typeof result !== 'string') {
+      throw new Error('Internal error: Expected string response but received bytes.');
+    }
+    return result;
+  }, [executeCommand]);
+
+  const sendCommandRaw = useCallback(async (command: string, options?: { timeout?: number }): Promise<Uint8Array> => {
+    const result = await executeCommand(command, 'bytes', options);
+    if (!(result instanceof Uint8Array)) {
+      throw new Error('Internal error: Expected byte response but received string.');
+    }
+    return result;
+  }, [executeCommand]);
+
+  const setStreaming = useCallback((shouldStream: boolean): void => {
+    if (!state.connectedDevice && shouldStream) {
+      console.error("[useBluetooth] Cannot start streaming: No device connected.");
+      return;
+    }
+
+    // Only dispatch if the state is actually changing
+    if (state.isStreaming !== shouldStream) {
+      console.info(`[useBluetooth] Setting streaming status to: ${shouldStream}`);
+      dispatch({ type: 'SET_STREAMING_STATUS', payload: shouldStream });
+    } else {
+      console.info(`[useBluetooth] Streaming status is already ${shouldStream}. No change.`);
+    }
+  }, [state.isStreaming, state.connectedDevice, dispatch]);
+
+  // --- Effect to handle promise resolution/rejection based on state changes ---
+  // This effect runs whenever relevant state flags change (e.g., isScanning, connectedDevice)
+  // and checks if the corresponding promise ref should be resolved or rejected.
+  useEffect(() => {
+    // Scan Promise
+    if (scanPromiseRef.current && !state.isScanning && !state.error) { // Scan finished successfully
+        // console.log("Resolving scan promise");
+        scanPromiseRef.current.resolve();
+        scanPromiseRef.current = null;
+    } else if (scanPromiseRef.current && !state.isScanning && state.error) { // Scan finished with error
+        // console.log("Rejecting scan promise due to error state");
+        // scanPromiseRef.current.reject(state.error); // Error already rejected in scan initiation usually
+        // scanPromiseRef.current = null;
+    }
+
+    // Connect Promise (Resolved/Rejected within connectToDevice directly)
+
+    // Disconnect Promise (Resolved within disconnect directly, confirmed by DEVICE_DISCONNECTED state change)
+     if (disconnectPromiseRef.current && !state.connectedDevice && !state.isDisconnecting) {
+        // console.log("Resolving disconnect promise due to state change");
+        // disconnectPromiseRef.current.resolve(); // Already resolved in disconnect func
+        // disconnectPromiseRef.current = null;
+     }
+
+     // Command Promise (Resolved/Rejected by the DATA_RECEIVED logic in Provider/Manager or timeout)
+     // This effect *doesn't* handle command promises, they are managed via the timeout and DATA_RECEIVED handler
+
+  // Dependencies need to carefully include state flags that signal completion
+  }, [state.isScanning, state.error, state.connectedDevice, state.isDisconnecting]);
+
+
+   // --- Effect to process incoming data for sendCommand ---
+   // This is where the logic connecting DATA_RECEIVED actions to the commandPromise lives.
+   // This *could* live here, but is often better placed in the Provider to directly
+   // access the commandPromiseRef without prop drilling or complex context.
+   // For simplicity *initially*, we might put it here, but consider moving it.
+   useEffect(() => {
+       // If a command is awaiting response and we have a promise ref...
+       if (state.isAwaitingResponse && currentCommandRef.current) {
+           // Check the buffer for the prompt character '>' (0x3E)
+           const promptIndex = currentCommandRef.current.responseBuffer.indexOf(ELM327_PROMPT_BYTE);
+           if (promptIndex !== -1) {
+               console.info('[useBluetooth] Prompt ">" detected in buffer.');
+
+               // Extract the response bytes (excluding the prompt)
+               const responseBytes = currentCommandRef.current.responseBuffer.slice(0, promptIndex);
+               currentCommandRef.current.responseBuffer = []; // Clear buffer
+
+               // Clear the timeout!
+               if (currentCommandRef.current.timeoutId) clearTimeout(currentCommandRef.current.timeoutId);
+               currentCommandRef.current.timeoutId = null;
+
+               // Decode response bytes to string (assuming ASCII/UTF-8 typical for ELM327)
+               // Use TextDecoder for better performance and encoding support if available
+               let responseString = '';
+               try {
+                   responseString = new TextDecoder().decode(Uint8Array.from(responseBytes)).trim();
+                   // console.log("Decoded response:", responseString);
+               } catch (e) {
+                   console.warn('[useBluetooth] TextDecoder failed, falling back to fromCharCode:', e);
+                   // Fallback for environments without TextDecoder or for simple ASCII
+                   responseString = String.fromCharCode(...responseBytes).trim();
+               }
+
+               // Resolve the command promise with the string
+               currentCommandRef.current?.promise.resolve(responseString);
+               // currentCommandRef.current = null; // Cleared in sendCommand finally block
+               // Dispatch success action to reset isAwaitingResponse flag in state
+               // (This happens in sendCommand after await resolves)
+               // dispatch({ type: 'COMMAND_SUCCESS' }); // NO! Done in sendCommand
+           }
+       }
+       // This effect might depend on a state value that changes when DATA_RECEIVED happens,
+       // or it needs direct access to the raw data dispatched by the listener.
+       // How state.lastDataReceived or similar would be structured is key.
+       // Putting the buffer ref manipulation *here* makes this tricky.
+       // ---> REVISIT: This data processing logic is better suited inside the Provider <---
+       // ---> where it can directly react to DATA_RECEIVED dispatches.          <---
+
+   }, [state.isAwaitingResponse /*, state.lastDataReceived - needs state update */]);
+
+   // Effect to append incoming data to buffer - NEEDS REVISION
+   // This is problematic here, depends on how DATA_RECEIVED updates state or if
+   // we pass data differently. Let's assume for now the Provider handles this.
+   // useEffect(() => {
+   //   // On DATA_RECEIVED action (how to detect this here?)
+   //   // commandResponseBufferRef.current.push(...action.payload);
+   // }, [/* dependency on received data */]);
+
+
+  // Return the state values and the memoized functions
+  return {
+    ...state, // Spread all state properties
+
+    // Action Functions
+    checkPermissions,
+    scanDevices,
+    connectToDevice,
+    disconnect,
+    sendCommand,
+
+    // TODO Functions (return placeholders)
+    requestBluetoothPermissions,
+    promptEnableBluetooth,
+    sendCommandRaw,
+    setStreaming,
+  };
+};
