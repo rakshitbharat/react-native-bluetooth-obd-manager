@@ -89,6 +89,7 @@
     "eslint-plugin-prettier": "*",
     "eslint-plugin-react": "*",
     "eslint-plugin-react-hooks": "*",
+    "eslint-plugin-react-native": "^5.0.0",
     "husky": "*",
     "jest": "*",
     "jest-environment-jsdom": "^29.7.0",

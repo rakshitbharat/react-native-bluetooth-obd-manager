@@ -33,7 +33,7 @@ module.exports = [
       '**/node_modules/**',
       'lib/**',
       'dist/**',
-      'coverage/**',
+      'coverage/**', // Make sure coverage is ignored
       'example/**',
       '__mocks__/**',
       '__tests__/**',
