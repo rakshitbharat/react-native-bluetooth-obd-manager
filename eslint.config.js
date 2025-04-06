@@ -1,6 +1,7 @@
 const { FlatCompat } = require('@eslint/eslintrc');
 const js = require('@eslint/js');
 const path = require('path');
+const reactNativePlugin = require('eslint-plugin-react-native');
 
 const compat = new FlatCompat({
   baseDirectory: __dirname,
@@ -52,6 +53,9 @@ module.exports = [
       },
       globals: customGlobals,
     },
+    plugins: {
+      'react-native': reactNativePlugin
+    },
     rules: {
       'no-undef': 'error',
       'no-unused-vars': 'warn',
@@ -64,7 +68,6 @@ module.exports = [
       'react-native/no-raw-text': 'warn',
       'react-native/no-single-element-style-arrays': 'warn',
     },
-    plugins: ['react-native'],
     settings: {
       'react-native/style-sheet-object-names': ['StyleSheet', 'ViewStyles', 'TextStyles']
     }
