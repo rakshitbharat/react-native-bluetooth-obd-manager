@@ -69,6 +69,9 @@ module.exports = [
       'react-native/no-single-element-style-arrays': 'warn',
     },
     settings: {
+      react: {
+        version: 'detect'
+      },
       'react-native/style-sheet-object-names': ['StyleSheet', 'ViewStyles', 'TextStyles']
     }
   },
