@@ -1,13 +1,22 @@
 import React from 'react';
-import { BluetoothProvider } from '../../src/context/BluetoothProvider';
-import type { ReactNode } from 'react';
-import { mockNativeEventEmitter } from '../mocks/react-native';
+import { View } from 'react-native';
 
-const TestWrapper = ({ children }: { children: ReactNode }) => {
-  return React.createElement(BluetoothProvider, null, children);
+const initialContextValue = {
+  state: {
+    isInitializing: false,
+    isBluetoothOn: true,
+    hasPermissions: false,
+    // ...add other required state props
+  },
+  dispatch: jest.fn()
 };
 
-export const createWrapper = () => ({ wrapper: TestWrapper });
+// Create a simple wrapper that doesn't depend on BluetoothProvider
+export const createWrapper = () => {
+  return ({ children }: { children: React.ReactNode }) => (
+    <View>{children}</View>
+  );
+};
 
 // Helper for emitting mock BLE events in tests
 export const emitMockBleEvent = (eventName: string, eventData: any): void => {

@@ -1,4 +1,4 @@
-const React = require('react');
+import { EventEmitter } from 'events';
 
 const mockComponent = (name: string) => {
   const ComponentMock = (props: any) => React.createElement(name, props);
@@ -6,33 +6,26 @@ const mockComponent = (name: string) => {
   return ComponentMock;
 };
 
-const bleManagerModule = {
-  start: jest.fn(() => Promise.resolve()),
-  scan: jest.fn(() => Promise.resolve()),
-  stopScan: jest.fn(() => Promise.resolve()),
-  connect: jest.fn(() => Promise.resolve()),
-  disconnect: jest.fn(() => Promise.resolve()),
-  checkState: jest.fn(() => Promise.resolve()),
-  enableBluetooth: jest.fn(() => Promise.resolve()),
-  write: jest.fn(() => Promise.resolve()),
-  writeWithoutResponse: jest.fn(() => Promise.resolve()),
-  read: jest.fn(() => Promise.resolve()),
-  retrieveServices: jest.fn(() => Promise.resolve()),
-  startNotification: jest.fn(() => Promise.resolve()),
-  stopNotification: jest.fn(() => Promise.resolve()),
+const mockBleManagerModule = {
+  start: jest.fn(),
+  scan: jest.fn(),
+  stopScan: jest.fn(),
+  // Add other methods needed by your tests
 };
 
-export default {
-  NativeModules: {
-    BleManager: bleManagerModule,
-  },
-  NativeEventEmitter: jest.fn(() => ({
-    addListener: jest.fn(() => ({ remove: jest.fn() })),
-    removeAllListeners: jest.fn(),
-  })),
+const mockNativeModules = {
+  BleManager: mockBleManagerModule
+};
+
+const mockNativeEventEmitter = jest.fn().mockImplementation(() => new EventEmitter());
+
+module.exports = {
+  NativeModules: mockNativeModules,
+  NativeEventEmitter: mockNativeEventEmitter,
   Platform: {
     OS: 'android',
-    select: jest.fn(obj => obj.android),
+    Version: 31,
+    select: jest.fn(obj => obj.android)
   },
   ActivityIndicator: mockComponent('ActivityIndicator'),
   View: mockComponent('View'),

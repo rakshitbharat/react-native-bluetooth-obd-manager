@@ -37,8 +37,42 @@ function createDeferredPromise<T>(): DeferredPromise<T> {
 }
 
 /**
- * Custom hook providing access to Bluetooth state and functions
- * for interacting with ELM327 OBD-II adapters.
+ * Custom hook for managing Bluetooth connections with ELM327 OBD-II adapters.
+ * 
+ * Provides a complete interface for:
+ * - Checking and requesting Bluetooth permissions
+ * - Scanning for nearby Bluetooth devices
+ * - Connecting to ELM327-compatible OBD-II adapters
+ * - Sending commands and receiving responses
+ * - Managing connection state
+ * 
+ * @returns {UseBluetoothResult} Object containing Bluetooth state and control functions
+ * @example
+ * ```tsx
+ * const {
+ *   isBluetoothOn,
+ *   discoveredDevices,
+ *   connectedDevice,
+ *   scanDevices,
+ *   connectToDevice,
+ *   sendCommand,
+ * } = useBluetooth();
+ * 
+ * // Check if Bluetooth is enabled
+ * if (!isBluetoothOn) {
+ *   // Show a message or prompt the user to enable Bluetooth
+ * }
+ * 
+ * // Start scanning for devices
+ * const handleScan = async () => {
+ *   try {
+ *     await scanDevices(5000); // Scan for 5 seconds
+ *     // Devices will be in discoveredDevices array
+ *   } catch (error) {
+ *     console.error('Scan failed:', error);
+ *   }
+ * };
+ * ```
  */
 export const useBluetooth = (): UseBluetoothResult => {
   const state = useBluetoothState();
@@ -52,6 +86,15 @@ export const useBluetooth = (): UseBluetoothResult => {
 
   // --- Permission Functions ---
 
+  /**
+   * Checks if required Bluetooth permissions are granted.
+   * 
+   * On Android 12+ (API 31+), checks BLUETOOTH_SCAN, BLUETOOTH_CONNECT, and ACCESS_FINE_LOCATION.
+   * On older Android versions, checks ACCESS_FINE_LOCATION.
+   * On iOS, checks LOCATION_WHEN_IN_USE.
+   * 
+   * @returns {Promise<boolean>} True if all required permissions are granted, false otherwise
+   */
   const checkPermissions = useCallback(async (): Promise<boolean> => {
     console.info('[useBluetooth] Checking permissions...');
     let requiredPermissions: Permissions.Permission[] = [];
@@ -96,7 +139,15 @@ export const useBluetooth = (): UseBluetoothResult => {
     }
   }, [dispatch]);
 
-
+  /**
+   * Requests required Bluetooth permissions from the user.
+   * 
+   * On Android 12+, requests BLUETOOTH_SCAN, BLUETOOTH_CONNECT, and ACCESS_FINE_LOCATION.
+   * On older Android versions, requests ACCESS_FINE_LOCATION.
+   * On iOS, requests LOCATION_WHEN_IN_USE and BLUETOOTH_PERIPHERAL.
+   * 
+   * @returns {Promise<boolean>} True if all required permissions are granted, false otherwise
+   */
   const requestBluetoothPermissions = useCallback(async (): Promise<boolean> => {
     console.info('[useBluetooth] Requesting permissions...');
     let permissionsToRequest: Permissions.Permission[] = [];
@@ -175,7 +226,15 @@ export const useBluetooth = (): UseBluetoothResult => {
     }
   }, [dispatch]);
 
-
+  /**
+   * Prompts the user to enable Bluetooth if it's disabled.
+   * 
+   * On Android, this shows the system dialog to enable Bluetooth.
+   * On iOS, this does nothing as there's no programmatic way to show the Bluetooth settings.
+   * 
+   * @returns {Promise<void>} Resolves when Bluetooth is enabled or rejects if user denies
+   * @throws {Error} If the user denies the request or there's another error
+   */
   const promptEnableBluetooth = useCallback(async (): Promise<void> => {
     if (state.isBluetoothOn) {
         console.info('[useBluetooth] Bluetooth is already enabled.');
@@ -202,9 +261,16 @@ export const useBluetooth = (): UseBluetoothResult => {
     }
   }, [state.isBluetoothOn]);
 
-
-  // --- Scanning Functions ---
-
+  /**
+   * Scans for nearby Bluetooth devices.
+   * 
+   * This will update the `discoveredDevices` state with found devices.
+   * Each device is tagged with `isLikelyOBD` based on name heuristics.
+   * 
+   * @param {number} [scanDurationMs=5000] How long to scan in milliseconds
+   * @returns {Promise<void>} Resolves when scanning completes
+   * @throws {Error} If Bluetooth is off, permissions are missing, or scan fails
+   */
   const scanDevices = useCallback(async (scanDurationMs = 5000): Promise<void> => {
     if (!state.isBluetoothOn) {
         throw new Error('Bluetooth is currently turned off.');
@@ -271,8 +337,20 @@ export const useBluetooth = (): UseBluetoothResult => {
     return scanPromiseRef.current?.promise;
   }, [state.isBluetoothOn, state.hasPermissions, state.isScanning, dispatch]);
 
-  // --- Connection Functions ---
-
+  /**
+   * Connects to a Bluetooth device and configures it for ELM327 communication.
+   * 
+   * This function:
+   * 1. Connects to the specified peripheral
+   * 2. Retrieves services and characteristics
+   * 3. Finds a compatible ELM327 service/characteristic configuration
+   * 4. Starts notifications on the appropriate characteristic
+   * 
+   * @param {string} deviceId The ID of the device to connect to
+   * @returns {Promise<Peripheral>} The connected peripheral object
+   * @throws {Error} If already connecting, already connected to another device,
+   *                 or if the device is incompatible or connection fails
+   */
   const connectToDevice = useCallback(async (deviceId: string): Promise<Peripheral> => {
     if (state.isConnecting) {
         throw new Error('Connection already in progress.');

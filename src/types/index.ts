@@ -45,18 +45,23 @@ export interface BleError {
  * Stored once a compatible service/characteristic set is found.
  */
 export interface ActiveDeviceConfig {
+  /** The UUID of the primary service used for communication */
   serviceUUID: string;
+  /** The UUID of the characteristic used for writing commands */
   writeCharacteristicUUID: string;
+  /** The UUID of the characteristic used for receiving notifications */
   notifyCharacteristicUUID: string;
-  writeType: 'Write' | 'WriteWithoutResponse'; // Determined write method
+  /** Whether the write characteristic supports Write (with response) or WriteWithoutResponse */
+  writeType: 'Write' | 'WriteWithoutResponse';
 }
 
 /**
- * Extends the base Peripheral type to include our predictive flag.
- * TODO: Implement the logic to set isLikelyOBD during scanning.
+ * Extends the base Peripheral type to include prediction flags for OBD compatibility.
  */
 export interface PeripheralWithPrediction extends Peripheral {
-  isLikelyOBD?: boolean; // Predictive flag based on device name heuristics
+  /** Indicates if this device is likely an OBD-II adapter based on name heuristics */
+  isLikelyOBD?: boolean;
+  /** Additional information about prediction reasoning (for debugging) */
   prediction?: string;
 }
 
@@ -88,10 +93,13 @@ export interface CurrentCommand {
  * Represents the state managed by the Bluetooth context and reducer.
  */
 export interface BluetoothState {
-  // Core BLE State
+  /** Whether the Bluetooth adapter is on */
   isBluetoothOn: boolean;
+  /** Whether required permissions are granted */
   hasPermissions: boolean; // Reflects status from the last check/request
+  /** Whether the BluetoothProvider is still initializing */
   isInitializing: boolean; // Tracks BleManager.start() completion
+  /** The most recent error that occurred, if any */
   error: BleError | Error | null; // Stores the last encountered error
 
   // Scanning State
@@ -172,22 +180,68 @@ export type BluetoothContextState = BluetoothState;
  * Structure of the object returned by the `useBluetooth` hook.
  */
 export interface UseBluetoothResult extends BluetoothContextState {
-  // Action Functions exposed to the user:
+  /**
+   * Checks if required Bluetooth permissions are granted.
+   * @returns Promise resolving to true if permissions are granted, false otherwise
+   */
   checkPermissions: () => Promise<boolean>;
+  
+  /**
+   * Requests Bluetooth permissions from the user.
+   * @returns Promise resolving to true if permissions are granted, false otherwise
+   */
+  requestBluetoothPermissions: () => Promise<boolean>;
+  
+  /**
+   * Prompts the user to enable Bluetooth if it's not already on.
+   * On iOS, this is a no-op as there's no API to open Bluetooth settings.
+   */
+  promptEnableBluetooth: () => Promise<void>;
+  
+  /**
+   * Scans for nearby Bluetooth devices.
+   * @param scanDuration Duration to scan in milliseconds (default: 5000)
+   */
   scanDevices: (scanDuration?: number) => Promise<void>;
+  
+  /**
+   * Connects to a Bluetooth device.
+   * @param deviceId ID of the device to connect to
+   * @returns Promise resolving to the connected peripheral
+   */
   connectToDevice: (deviceId: string) => Promise<Peripheral>;
+  
+  /**
+   * Disconnects from the currently connected device.
+   */
   disconnect: () => Promise<void>;
+  
+  /**
+   * Sends a command to the connected ELM327 device and returns the response as a string.
+   * @param command The command to send (e.g., "AT Z", "01 0C")
+   * @param options Options for command execution
+   * @returns Promise resolving to the string response
+   */
   sendCommand: (
     command: string,
     options?: { timeout?: number },
   ) => Promise<string>;
-
-  // TODO Functions:
-  requestBluetoothPermissions: () => Promise<boolean>;
-  promptEnableBluetooth: () => Promise<void>;
+  
+  /**
+   * Sends a command to the connected ELM327 device and returns the raw response bytes.
+   * @param command The command to send
+   * @param options Options for command execution
+   * @returns Promise resolving to the raw byte response
+   */
   sendCommandRaw: (
     command: string,
     options?: { timeout?: number },
-  ) => Promise<Uint8Array>; // Or integrate into sendCommand
-  setStreaming: (shouldStream: boolean) => void; // For streaming control
+  ) => Promise<Uint8Array>;
+  
+  /**
+   * Sets the streaming state.
+   * When true, enables automatic inactivity monitoring.
+   * @param shouldStream Whether streaming should be active
+   */
+  setStreaming: (shouldStream: boolean) => void;
 }

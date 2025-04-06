@@ -6,8 +6,16 @@ require('@testing-library/jest-native/extend-expect');
 /**
  * --- Mocking Core Dependencies ---
  */
+jest.mock('react-native');
 jest.mock('react-native-ble-manager');
 jest.mock('react-native-permissions');
+
+// Add React test environment setup
+const React = require('react');
+global.React = React;
+
+// Initialize test renderer
+require('react-test-renderer');
 
 /**
  * --- Mocking NativeEventEmitter ---
@@ -42,8 +50,15 @@ jest.mock('react-native/Libraries/EventEmitter/NativeEventEmitter', () => {
  * --- Global Test Setup ---
  */
 
+// Fix for duplicate beforeEach hooks - combine them into one
 beforeEach(() => {
     jest.clearAllMocks();
+    
+    // Use real timers for React hooks tests
+    if (jest.isMockFunction(setTimeout)) {
+        jest.useRealTimers();
+    }
+
     // Reset specific mock implementations if needed
     /*
     const mockPermissions = require('react-native-permissions');
@@ -53,7 +68,14 @@ beforeEach(() => {
     */
 });
 
+afterEach(() => {
+    jest.clearAllMocks();
+    // Only clear timers if they are fake
+    if (jest.isMockFunction(setTimeout)) {
+        jest.clearAllTimers();
+    }
+});
+
 // --- Other Global Hooks (Uncomment if needed) ---
-// afterEach(() => { });
 // beforeAll(() => { });
 // afterAll(() => { });

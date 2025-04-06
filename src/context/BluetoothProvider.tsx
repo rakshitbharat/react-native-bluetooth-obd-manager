@@ -48,8 +48,18 @@ const InternalCommandControlContext = createContext<{
 InternalCommandControlContext.displayName = 'InternalCommandControlContext';
 
 /**
- * Provides the Bluetooth state and dispatch function to the application.
- * Initializes BleManager and sets up global event listeners.
+ * Provider component that manages Bluetooth state and event listeners.
+ * 
+ * Initializes BleManager and sets up global event listeners for:
+ * - Bluetooth state changes
+ * - Device discovery during scanning
+ * - Connection/disconnection events
+ * - Incoming data notifications
+ * 
+ * Wrap your application with this provider to use the `useBluetooth` hook.
+ * 
+ * @param {BluetoothProviderProps} props Component props
+ * @param {ReactNode} props.children Child components that will have access to the Bluetooth context
  */
 export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     const [state, dispatch] = useReducer(bluetoothReducer, initialState);
@@ -241,6 +251,15 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     );
 };
 
+/**
+ * Internal hook for accessing the command control context.
+ * This is used by the BluetoothProvider to manage command execution state.
+ * Not meant for external consumption.
+ * 
+ * @internal
+ * @returns Command control context containing the current command reference
+ * @throws {Error} If used outside of a BluetoothProvider
+ */
 export const useInternalCommandControl = () => {
     const context = React.useContext(InternalCommandControlContext);
     if (context === undefined) {
