@@ -10,7 +10,11 @@ import React, {
   createContext,
   useMemo,
 } from 'react';
-import { NativeEventEmitter, NativeModules, type EmitterSubscription } from 'react-native';
+import {
+  NativeEventEmitter,
+  NativeModules,
+  type EmitterSubscription,
+} from 'react-native';
 import BleManager from 'react-native-ble-manager';
 import type {
   Peripheral,

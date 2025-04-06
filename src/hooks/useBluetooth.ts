@@ -36,8 +36,8 @@ function createDeferredPromise<T>(): DeferredPromise<T> {
   let rejectFn!: (reason: Error) => void;
 
   const promise = new Promise<T>((resolve, reject) => {
-    resolveFn = resolve;  // This automatically has the correct type
-    rejectFn = reject;    // This automatically has the correct type
+    resolveFn = resolve; // This automatically has the correct type
+    rejectFn = reject; // This automatically has the correct type
   });
 
   return { promise, resolve: resolveFn, reject: rejectFn };
@@ -49,8 +49,15 @@ const handleError = (error: unknown): Error => {
     return error;
   }
   // Handle BleError type
-  if (typeof error === 'object' && error !== null && 'errorCode' in error && 'message' in error) {
-    return new Error(`BLE Error (${(error as BleError).errorCode}): ${(error as BleError).message}`);
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'errorCode' in error &&
+    'message' in error
+  ) {
+    return new Error(
+      `BLE Error (${(error as BleError).errorCode}): ${(error as BleError).message}`,
+    );
   }
   return new Error(String(error));
 };
@@ -278,7 +285,10 @@ export const useBluetooth = (): UseBluetoothResult => {
         return finalGranted;
       } catch (error) {
         const formattedError = handleError(error);
-        console.error('[useBluetooth] Permission request failed:', formattedError);
+        console.error(
+          '[useBluetooth] Permission request failed:',
+          formattedError,
+        );
         dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: false });
         dispatch({ type: 'SET_ERROR', payload: formattedError });
         return false;
@@ -653,7 +663,10 @@ export const useBluetooth = (): UseBluetoothResult => {
       disconnectPromiseRef.current?.resolve();
     } catch (error) {
       const formattedError = handleError(error);
-      console.error(`[useBluetooth] Disconnect failed for ${deviceId}:`, formattedError);
+      console.error(
+        `[useBluetooth] Disconnect failed for ${deviceId}:`,
+        formattedError,
+      );
       dispatch({
         type: 'DISCONNECT_FAILURE',
         payload: formattedError,
