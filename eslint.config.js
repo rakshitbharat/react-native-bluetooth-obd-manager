@@ -29,20 +29,8 @@ const customGlobals = {
 module.exports = [
   js.configs.recommended,
   {
-    files: ['**/*.{js,jsx,ts,tsx}'],
-    ignores: [
-      '**/node_modules/**',
-      'lib/**',
-      'dist/**',
-      'coverage/**',
-      'example/**',
-      '__mocks__/**',
-      '__tests__/**',
-      '.github/**',
-      '.husky/**',
-      '.yarn/**',
-      'docs/**',
-    ],
+    files: ['src/**/*.{js,jsx,ts,tsx}'],
+    ignores: ['**/node_modules/**'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
