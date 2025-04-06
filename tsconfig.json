@@ -23,7 +23,11 @@
     "alwaysStrict": true,
 
     /* If transpiling with TypeScript: */
-    "module": "esnext", // Adjusted by builder-bob
+    "module": "commonjs", // Adjusted by builder-bob
+    "outDir": "lib/typescript",
+    "declarationDir": "lib/typescript",
+    "declaration": true,
+    "declarationMap": true,
     // "outDir": "dist",
 
     /* If NOT transpiling with TypeScript: */
@@ -50,8 +54,6 @@
 
     /* Source Map Options */
     "sourceMap": true, // Generate source maps for debugging
-    "declaration": true, // Generate .d.ts files
-    "declarationMap": true, // Generate source maps for .d.ts files
 
     /* Advanced Options */
     "forceConsistentCasingInFileNames": true,

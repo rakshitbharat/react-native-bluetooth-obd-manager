@@ -144,7 +144,7 @@ export const useBluetooth = (): UseBluetoothResult => {
    * 
    * On Android 12+, requests BLUETOOTH_SCAN, BLUETOOTH_CONNECT, and ACCESS_FINE_LOCATION.
    * On older Android versions, requests ACCESS_FINE_LOCATION.
-   * On iOS, requests LOCATION_WHEN_IN_USE and BLUETOOTH_PERIPHERAL.
+   * On iOS, requests LOCATION_WHEN_IN_USE and BLUETOOTH.
    * 
    * @returns {Promise<boolean>} True if all required permissions are granted, false otherwise
    */
@@ -194,8 +194,9 @@ export const useBluetooth = (): UseBluetoothResult => {
         let iosBluetoothGranted = true;
         if (Platform.OS === 'ios' && iosBlePermissionNeeded) {
             console.info('[useBluetooth] Requesting iOS Bluetooth permission...');
-            const bleStatus = await Permissions.request(Permissions.PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL);
-            finalStatuses[Permissions.PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL] = bleStatus;
+            // Updated to use BLUETOOTH instead of BLUETOOTH_PERIPHERAL
+            const bleStatus = await Permissions.request(Permissions.PERMISSIONS.IOS.BLUETOOTH);
+            finalStatuses[Permissions.PERMISSIONS.IOS.BLUETOOTH] = bleStatus;
             iosBluetoothGranted = bleStatus === Permissions.RESULTS.GRANTED || 
                                  bleStatus === Permissions.RESULTS.UNAVAILABLE;
             console.info(`[useBluetooth] iOS Bluetooth request result: ${bleStatus}`);

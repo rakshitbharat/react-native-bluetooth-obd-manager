@@ -27,11 +27,12 @@
   ],
   "scripts": {
     "start": "react-native start",
-    "build": "tsc --build",
-    "test": "jest --config jest.config.js",
+    "build": "bob build && tsc --build tsconfig.build.json",
+    "test": "jest --config jest.config.cjs",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "prepare": "husky install"
+    "prepare": "bob build",
+    "test:coverage": "jest --coverage"
   },
   "keywords": [
     "react-native",
@@ -99,7 +100,9 @@
     "react-native-permissions": "*",
     "react-test-renderer": "18.2.0",
     "ts-jest": "*",
-    "typescript": "*"
+    "typescript": "*",
+    "react-native-builder-bob": "^0.20.0",
+    "eslint-plugin-jest": "^27.4.0"
   },
   "resolutions": {
     "@types/react": "~18.2.45",
@@ -130,7 +133,7 @@
   "eslintConfig": {
     "root": true,
     "extends": [
-      "./.eslintrc.js"
+      "./eslint.config.js"
     ]
   },
   "eslintIgnore": [
@@ -163,5 +166,8 @@
     "*.{json,md,yaml,yml}": [
       "prettier --write"
     ]
+  },
+  "babel": {
+    "extends": "./babel.config.cjs"
   }
 }

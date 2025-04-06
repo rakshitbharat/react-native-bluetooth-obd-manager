@@ -1,5 +1,9 @@
 // tsconfig.build.json
 {
-    "extends": "./tsconfig.json",
-    "exclude": ["__tests__", "example", "lib", "node_modules"]
-  }
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "esnext"
+    // Removed "outDir": "lib/module" as it conflicts with CLI options
+  },
+  "exclude": ["__tests__", "example", "lib", "node_modules"]
+}

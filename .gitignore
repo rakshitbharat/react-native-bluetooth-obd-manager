@@ -31,6 +31,9 @@ yarn.lock
 # Testing
 coverage/
 
+# Test coverage
+coverage/
+
 # React Native
 *.jsbundle
 *.jsbundle.map

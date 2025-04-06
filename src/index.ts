@@ -31,4 +31,4 @@ export type {
 } from './types';
 
 // Export Peripheral from react-native-ble-manager for convenience
-export type { Peripheral } from './types;
+export type { Peripheral } from './types';
