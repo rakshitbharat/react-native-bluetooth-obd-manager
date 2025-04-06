@@ -1,6 +1,8 @@
 // src/types/index.ts
 
 import type { Dispatch } from 'react';
+import type { Peripheral } from 'react-native-ble-manager';
+import type { Error as BleError } from 'react-native-ble-manager';
 
 // Define types for react-native-ble-manager since they're not exported
 export interface Peripheral {
@@ -10,8 +12,8 @@ export interface Peripheral {
   advertising?: {
     isConnectable?: boolean;
     serviceUUIDs?: string[];
-    manufacturerData?: any;
-    serviceData?: any;
+    manufacturerData?: Buffer;
+    serviceData?: Record<string, Buffer>;
     txPowerLevel?: number;
   };
 }
@@ -65,10 +67,10 @@ export interface PeripheralWithPrediction extends Peripheral {
   prediction?: string;
 }
 
-export interface DeferredPromise<T = any> {
+export interface DeferredPromise<T> {
   promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason?: any) => void;
+  resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason: Error) => void;
 }
 
 export interface BleDisconnectPeripheralEvent {

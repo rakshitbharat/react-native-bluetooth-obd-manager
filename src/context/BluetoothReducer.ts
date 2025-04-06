@@ -61,16 +61,17 @@ export function bluetoothReducer(
     case 'SET_PERMISSIONS_STATUS':
       return { ...state, hasPermissions: action.payload };
 
-    case 'SET_ERROR':
-      console.error('[BluetoothReducer] Error Set:', action.payload); // Log errors passing through state
+    case 'SET_ERROR': {
       return {
         ...state,
         error: action.payload,
+        // Reset all transient flags
         isConnecting: false,
         isDisconnecting: false,
         isScanning: false,
         isAwaitingResponse: false,
       };
+    }
 
     case 'RESET_STATE':
       return { ...initialState };
@@ -92,14 +93,18 @@ export function bluetoothReducer(
         error: isTimeoutError ? null : state.error, // Clear only timeout errors
       };
 
-    case 'DEVICE_FOUND':
-      if (state.discoveredDevices.some(d => d.id === action.payload.id)) {
-        return state; // No change if already discovered
-      }
+    case 'DEVICE_FOUND': {
+      const newDevice = action.payload;
+      const deviceExists = state.discoveredDevices.some(
+        d => d.id === newDevice.id,
+      );
       return {
         ...state,
-        discoveredDevices: [...state.discoveredDevices, action.payload],
+        discoveredDevices: deviceExists
+          ? state.discoveredDevices
+          : [...state.discoveredDevices, newDevice],
       };
+    }
 
     case 'CLEAR_DISCOVERED_DEVICES':
       return { ...state, discoveredDevices: [] };
@@ -152,6 +157,18 @@ export function bluetoothReducer(
     case 'DISCONNECT_FAILURE':
       return { ...state, isDisconnecting: false, error: action.payload };
 
+    case 'UNEXPECTED_DISCONNECT': {
+      const error = new Error('Device disconnected unexpectedly');
+      return {
+        ...state,
+        error,
+        isConnecting: false,
+        isDisconnecting: false,
+        connectedDevice: null,
+        activeDeviceConfig: null,
+      };
+    }
+
     // --- Command Actions ---
     case 'SEND_COMMAND_START':
       return { ...state, isAwaitingResponse: true, error: null };
@@ -165,7 +182,11 @@ export function bluetoothReducer(
       };
 
     case 'COMMAND_FAILURE':
-      return { ...state, isAwaitingResponse: false, error: action.payload };
+      return {
+        ...state,
+        isAwaitingResponse: false,
+        error: action.payload,
+      };
 
     case 'COMMAND_TIMEOUT':
       return {
@@ -178,8 +199,9 @@ export function bluetoothReducer(
       return state; // No state change directly from receiving raw data chunk here
 
     // --- Streaming Actions ---
-    case 'SET_STREAMING_STATUS':
-      console.log(`[Reducer] Setting isStreaming=${action.payload}`);
+    case 'SET_STREAMING_STATUS': {
+      // Use console.info instead of console.log
+      console.info(`[Reducer] Setting isStreaming=${action.payload}`);
       return {
         ...state,
         isStreaming: action.payload,
@@ -189,6 +211,7 @@ export function bluetoothReducer(
             ? null
             : state.error,
       };
+    }
 
     case 'UPDATE_LAST_SUCCESS_TIMESTAMP':
       return { ...state, lastSuccessfulCommandTimestamp: Date.now() };
@@ -202,10 +225,12 @@ export function bluetoothReducer(
         error: new Error('Streaming stopped due to inactivity.'),
       };
 
-    default:
+    default: {
+      const unknownAction = action as { type: string };
       console.warn(
-        `[BluetoothReducer] Unhandled action type: ${(action as any).type}`,
+        `[BluetoothReducer] Unhandled action type: ${unknownAction.type}`,
       );
       return state;
+    }
   }
 }

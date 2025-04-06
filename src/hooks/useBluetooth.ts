@@ -28,19 +28,20 @@ import type { ActiveDeviceConfig, UseBluetoothResult } from '../types';
 interface DeferredPromise<T> {
   promise: Promise<T>;
   resolve: (value: T | PromiseLike<T>) => void;
-  reject: (reason?: any) => void;
+  reject: (reason: Error) => void;
 }
 
-function createDeferredPromise<T>(): DeferredPromise<T> {
-  let resolveFn: (value: T | PromiseLike<T>) => void;
-  let rejectFn: (reason?: any) => void;
+const createDeferredPromise = <T>(): DeferredPromise<T> => {
+  let resolveFn!: (value: T) => void;
+  let rejectFn!: (reason: Error) => void;
+
   const promise = new Promise<T>((resolve, reject) => {
     resolveFn = resolve;
     rejectFn = reject;
   });
-  // @ts-expect-error: TS doesn't know resolveFn/rejectFn are assigned in Promise constructor
+
   return { promise, resolve: resolveFn, reject: rejectFn };
-}
+};
 
 /**
  * Custom hook for managing Bluetooth connections with ELM327 OBD-II adapters.
@@ -828,41 +829,27 @@ export const useBluetooth = (): UseBluetoothResult => {
   // and checks if the corresponding promise ref should be resolved or rejected.
   useEffect(() => {
     // Scan Promise
-    if (scanPromiseRef.current && !state.isScanning && !state.error) {
-      // Scan finished successfully
-      // console.log("Resolving scan promise");
-      scanPromiseRef.current.resolve();
+    if (scanPromiseRef.current && !state.isScanning) {
+      if (state.error && state.error.message.includes('Scan timed out')) {
+        scanPromiseRef.current.resolve();
+      } else if (state.error) {
+        scanPromiseRef.current.reject(state.error);
+      } else {
+        scanPromiseRef.current.resolve();
+      }
       scanPromiseRef.current = null;
-    } else if (scanPromiseRef.current && !state.isScanning && state.error) {
-      // Scan finished with error
-      // console.log("Rejecting scan promise due to error state");
-      // scanPromiseRef.current.reject(state.error); // Error already rejected in scan initiation usually
-      // scanPromiseRef.current = null;
     }
+  }, [state.isScanning, state.error]);
 
-    // Connect Promise (Resolved/Rejected within connectToDevice directly)
-
-    // Disconnect Promise (Resolved within disconnect directly, confirmed by DEVICE_DISCONNECTED state change)
-    if (
-      disconnectPromiseRef.current &&
-      !state.connectedDevice &&
-      !state.isDisconnecting
-    ) {
-      // console.log("Resolving disconnect promise due to state change");
-      // disconnectPromiseRef.current.resolve(); // Already resolved in disconnect func
-      // disconnectPromiseRef.current = null;
-    }
-
-    // Command Promise (Resolved/Rejected by the DATA_RECEIVED logic in Provider/Manager or timeout)
-    // This effect *doesn't* handle command promises, they are managed via the timeout and DATA_RECEIVED handler
-
-    // Dependencies need to carefully include state flags that signal completion
-  }, [
-    state.isScanning,
-    state.error,
-    state.connectedDevice,
-    state.isDisconnecting,
-  ]);
+  // Add new useEffect for currentCommandRef dependency
+  useEffect(() => {
+    // Handle currentCommandRef changes if needed
+    return () => {
+      if (currentCommandRef.current?.timeoutId) {
+        clearTimeout(currentCommandRef.current.timeoutId);
+      }
+    };
+  }, [currentCommandRef]);
 
   // --- Effect to process incoming data for sendCommand ---
   // This is where the logic connecting DATA_RECEIVED actions to the commandPromise lives.

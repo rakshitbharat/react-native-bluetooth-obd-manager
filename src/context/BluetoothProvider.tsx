@@ -129,7 +129,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
   };
 
   // Use refs to store listeners to ensure they are removed correctly
-  const listenersRef = useRef<any[]>([]); // Using any for listener type flexibility
+  const listenersRef = useRef<EmitterSubscription[]>([]);
 
   // Effect 1: Initialize BleManager on mount
   useEffect(() => {
@@ -155,7 +155,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
 
   // Effect 2: Set up BleManager event listeners
   useEffect(() => {
-    const listeners: any[] = []; // Temporary array for this effect run
+    const listeners: EmitterSubscription[] = []; // Temporary array for this effect run
 
     console.info('[BluetoothProvider] Setting up BLE listeners...');
 

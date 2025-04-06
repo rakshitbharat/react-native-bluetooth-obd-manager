@@ -1,3 +1,17 @@
+export interface BleEvent {
+  peripheral: string;
+  characteristic?: string;
+  service?: string;
+}
+
+export interface BleManagerDidUpdateValueForCharacteristicEvent extends BleEvent {
+  value: number[];
+}
+
+export interface BleDisconnectPeripheralEvent extends BleEvent {
+  reason?: string;
+}
+
 declare module 'react-native-ble-manager' {
   export interface Service {
     uuid: string;
@@ -21,8 +35,8 @@ declare module 'react-native-ble-manager' {
     advertising?: {
       isConnectable?: boolean;
       serviceUUIDs?: string[];
-      manufacturerData?: any;
-      serviceData?: any;
+      manufacturerData?: Buffer;
+      serviceData?: Record<string, Buffer>;
       txPowerLevel?: number;
     };
     services?: Service[];
