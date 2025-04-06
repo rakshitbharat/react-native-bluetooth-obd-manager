@@ -13,9 +13,9 @@
     "baseUrl": "./",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
-    "skipLibCheck": false,
+    "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["jest", "node"]
+    "types": ["jest", "react-native"]
   },
   "exclude": [
     "**/node_modules",
