@@ -4,7 +4,8 @@ export interface BleEvent {
   service?: string;
 }
 
-export interface BleManagerDidUpdateValueForCharacteristicEvent extends BleEvent {
+export interface BleManagerDidUpdateValueForCharacteristicEvent
+  extends BleEvent {
   value: number[];
 }
 
