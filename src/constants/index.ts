@@ -9,9 +9,9 @@ export interface Elm327SppTarget {
   /** Descriptive name for the adapter pattern */
   name: string;
   /** The UUID of the primary service */
-  serviceUUID: string; 
+  serviceUUID: string;
   /** The UUID for sending commands */
-  writeCharacteristicUUID: string; 
+  writeCharacteristicUUID: string;
   /** The UUID for receiving responses */
   notifyCharacteristicUUID: string;
 }

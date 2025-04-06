@@ -16,7 +16,7 @@ export interface Peripheral {
   };
 }
 
-export type BleManagerState = 
+export type BleManagerState =
   | 'on'
   | 'off'
   | 'turning_on'
@@ -185,37 +185,37 @@ export interface UseBluetoothResult extends BluetoothContextState {
    * @returns Promise resolving to true if permissions are granted, false otherwise
    */
   checkPermissions: () => Promise<boolean>;
-  
+
   /**
    * Requests Bluetooth permissions from the user.
    * @returns Promise resolving to true if permissions are granted, false otherwise
    */
   requestBluetoothPermissions: () => Promise<boolean>;
-  
+
   /**
    * Prompts the user to enable Bluetooth if it's not already on.
    * On iOS, this is a no-op as there's no API to open Bluetooth settings.
    */
   promptEnableBluetooth: () => Promise<void>;
-  
+
   /**
    * Scans for nearby Bluetooth devices.
    * @param scanDuration Duration to scan in milliseconds (default: 5000)
    */
   scanDevices: (scanDuration?: number) => Promise<void>;
-  
+
   /**
    * Connects to a Bluetooth device.
    * @param deviceId ID of the device to connect to
    * @returns Promise resolving to the connected peripheral
    */
   connectToDevice: (deviceId: string) => Promise<Peripheral>;
-  
+
   /**
    * Disconnects from the currently connected device.
    */
   disconnect: () => Promise<void>;
-  
+
   /**
    * Sends a command to the connected ELM327 device and returns the response as a string.
    * @param command The command to send (e.g., "AT Z", "01 0C")
@@ -226,7 +226,7 @@ export interface UseBluetoothResult extends BluetoothContextState {
     command: string,
     options?: { timeout?: number },
   ) => Promise<string>;
-  
+
   /**
    * Sends a command to the connected ELM327 device and returns the raw response bytes.
    * @param command The command to send
@@ -237,7 +237,7 @@ export interface UseBluetoothResult extends BluetoothContextState {
     command: string,
     options?: { timeout?: number },
   ) => Promise<Uint8Array>;
-  
+
   /**
    * Sets the streaming state.
    * When true, enables automatic inactivity monitoring.

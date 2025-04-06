@@ -2,10 +2,10 @@
 
 /**
  * React Native Bluetooth OBD Manager
- * 
+ *
  * A React Native library for communicating with OBD-II adapters via Bluetooth Low Energy.
  * Provides a React hook API for scanning, connecting, and sending commands to ELM327 devices.
- * 
+ *
  * @packageDocumentation
  */
 

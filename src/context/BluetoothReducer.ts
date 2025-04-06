@@ -93,7 +93,7 @@ export function bluetoothReducer(
       };
 
     case 'DEVICE_FOUND':
-      if (state.discoveredDevices.some((d) => d.id === action.payload.id)) {
+      if (state.discoveredDevices.some(d => d.id === action.payload.id)) {
         return state; // No change if already discovered
       }
       return {
@@ -184,9 +184,10 @@ export function bluetoothReducer(
         ...state,
         isStreaming: action.payload,
         lastSuccessfulCommandTimestamp: action.payload ? Date.now() : null,
-        error: !action.payload && state.error?.message?.includes('Streaming stopped')
-          ? null
-          : state.error,
+        error:
+          !action.payload && state.error?.message?.includes('Streaming stopped')
+            ? null
+            : state.error,
       };
 
     case 'UPDATE_LAST_SUCCESS_TIMESTAMP':
@@ -202,7 +203,9 @@ export function bluetoothReducer(
       };
 
     default:
-      console.warn(`[BluetoothReducer] Unhandled action type: ${(action as any).type}`);
+      console.warn(
+        `[BluetoothReducer] Unhandled action type: ${(action as any).type}`,
+      );
       return state;
   }
 }

@@ -30,10 +30,12 @@ BluetoothDispatchContext.displayName = 'BluetoothDispatchContext';
 export function useBluetoothState(): BluetoothState {
   const context = React.useContext(BluetoothStateContext);
   if (context === undefined) {
-    throw new Error('useBluetoothState must be used within a BluetoothProvider');
+    throw new Error(
+      'useBluetoothState must be used within a BluetoothProvider',
+    );
   }
   return context;
-};
+}
 
 /**
  * Hook to safely access the Bluetooth dispatch context.
@@ -47,4 +49,4 @@ export function useBluetoothDispatch(): BluetoothDispatch {
     );
   }
   return context;
-};
+}
