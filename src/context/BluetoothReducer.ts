@@ -94,10 +94,14 @@ export function bluetoothReducer(
     }
 
     case 'DEVICE_FOUND': {
-      const newDevices = state.discoveredDevices.filter(
-        device => device.id !== action.payload.id,
+      // Remove existing device with same ID
+      const existingDevices = state.discoveredDevices.filter(
+        device => device.id !== action.payload.id
       );
-      newDevices.push(action.payload);
+      
+      // Add new device and sort by ID to maintain consistent order
+      const newDevices = [...existingDevices, action.payload].sort((a, b) => a.id.localeCompare(b.id));
+      
       return {
         ...state,
         discoveredDevices: newDevices,
