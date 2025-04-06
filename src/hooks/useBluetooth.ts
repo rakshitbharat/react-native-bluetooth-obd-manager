@@ -427,7 +427,13 @@ export const useBluetooth = (): UseBluetoothResult => {
 
       return scanPromiseRef.current?.promise;
     },
-    [state.isBluetoothOn, state.hasPermissions, state.isScanning, dispatch],
+    [
+      state.isBluetoothOn,
+      state.hasPermissions,
+      state.isScanning,
+      state.error,
+      dispatch,
+    ],
   );
 
   /**

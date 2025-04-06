@@ -1,7 +1,6 @@
 // src/types/index.ts
 
 import type { Dispatch } from 'react';
-import type { EmitterSubscription } from 'react-native';
 import type { Peripheral as BlePeripheral } from 'react-native-ble-manager';
 
 // Re-export Peripheral interface with our additions
