@@ -40,14 +40,12 @@ export function bluetoothReducer(
   state: BluetoothState,
   action: BluetoothAction,
 ): BluetoothState {
-  // console.log(`[Reducer] Action: ${action.type}`, action.payload ?? ''); // Optional: For debugging state changes
-
   switch (action.type) {
     // --- Initialization & State ---
     case 'SET_INITIALIZING':
       return { ...state, isInitializing: action.payload };
 
-    case 'SET_BLUETOOTH_STATE':
+    case 'SET_BLUETOOTH_STATE': {
       if (!action.payload) {
         return {
           ...initialState,
@@ -57,6 +55,7 @@ export function bluetoothReducer(
         };
       }
       return { ...state, isBluetoothOn: action.payload };
+    }
 
     case 'SET_PERMISSIONS_STATUS':
       return { ...state, hasPermissions: action.payload };
@@ -85,13 +84,14 @@ export function bluetoothReducer(
         error: null, // Clear previous errors
       };
 
-    case 'SCAN_STOP':
+    case 'SCAN_STOP': {
       const isTimeoutError = state.error?.message?.includes('Scan timed out');
       return {
         ...state,
         isScanning: false,
         error: isTimeoutError ? null : state.error, // Clear only timeout errors
       };
+    }
 
     case 'DEVICE_FOUND': {
       const newDevice = action.payload;
@@ -103,6 +103,17 @@ export function bluetoothReducer(
         discoveredDevices: deviceExists
           ? state.discoveredDevices
           : [...state.discoveredDevices, newDevice],
+      };
+    }
+
+    case 'DEVICE_DISCOVERED': {
+      const newDevices = state.discoveredDevices.filter(
+        device => device.id !== action.payload?.id,
+      );
+      newDevices.push(action.payload);
+      return {
+        ...state,
+        discoveredDevices: newDevices,
       };
     }
 

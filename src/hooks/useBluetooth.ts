@@ -857,7 +857,6 @@ export const useBluetooth = (): UseBluetoothResult => {
   // access the commandPromiseRef without prop drilling or complex context.
   // For simplicity *initially*, we might put it here, but consider moving it.
   useEffect(() => {
-    // If a command is awaiting response and we have a promise ref...
     if (state.isAwaitingResponse && currentCommandRef.current) {
       // Check the buffer for the prompt character '>' (0x3E)
       const promptIndex =
@@ -902,15 +901,7 @@ export const useBluetooth = (): UseBluetoothResult => {
         // dispatch({ type: 'COMMAND_SUCCESS' }); // NO! Done in sendCommand
       }
     }
-    // This effect might depend on a state value that changes when DATA_RECEIVED happens,
-    // or it needs direct access to the raw data dispatched by the listener.
-    // How state.lastDataReceived or similar would be structured is key.
-    // Putting the buffer ref manipulation *here* makes this tricky.
-    // ---> REVISIT: This data processing logic is better suited inside the Provider <---
-    // ---> where it can directly react to DATA_RECEIVED dispatches.          <---
-  }, [
-    state.isAwaitingResponse /*, state.lastDataReceived - needs state update */,
-  ]);
+  }, [state.isAwaitingResponse, currentCommandRef]);
 
   // Effect to append incoming data to buffer - NEEDS REVISION
   // This is problematic here, depends on how DATA_RECEIVED updates state or if
