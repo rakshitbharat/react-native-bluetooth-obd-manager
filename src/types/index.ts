@@ -1,11 +1,11 @@
 // src/types/index.ts
 
 import type { Dispatch } from 'react';
-import type { Peripheral } from 'react-native-ble-manager';
-import type { Error as BleError } from 'react-native-ble-manager';
+import type { EmitterSubscription } from 'react-native';
+import type { Peripheral as BlePeripheral } from 'react-native-ble-manager';
 
-// Define types for react-native-ble-manager since they're not exported
-export interface Peripheral {
+// Re-export Peripheral interface with our additions
+export interface Peripheral extends BlePeripheral {
   id: string;
   name?: string;
   rssi?: number;
@@ -35,7 +35,7 @@ export interface BleManagerDidUpdateValueForCharacteristicEvent {
   value: number[];
 }
 
-// Define our own BleError interface since react-native-ble-manager doesn't export one
+// Define BleError interface locally instead of importing
 export interface BleError {
   errorCode: string;
   message: string;

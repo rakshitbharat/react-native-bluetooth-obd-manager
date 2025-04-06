@@ -10,7 +10,7 @@ import React, {
   createContext,
   useMemo,
 } from 'react';
-import { NativeEventEmitter, NativeModules } from 'react-native';
+import { NativeEventEmitter, NativeModules, type EmitterSubscription } from 'react-native';
 import BleManager from 'react-native-ble-manager';
 import type {
   Peripheral,
@@ -104,11 +104,11 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
             '[BluetoothProvider] Error processing incoming data:',
             error,
           );
-          if (currentCommandRef.current) {
-            currentCommandRef.current.promise.reject(error);
+          if (currentCommandRef.current?.promise) {
+            currentCommandRef.current.promise.reject(handleError(error));
             currentCommandRef.current = null;
           }
-          dispatch({ type: 'COMMAND_FAILURE', payload: error as Error });
+          dispatch({ type: 'COMMAND_FAILURE', payload: handleError(error) });
         }
       }
     },
@@ -126,6 +126,14 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
       );
       return String.fromCharCode(...bytes).trim();
     }
+  };
+
+  // Fix error rejection types
+  const handleError = (error: unknown): Error => {
+    if (error instanceof Error) {
+      return error;
+    }
+    return new Error(String(error));
   };
 
   // Use refs to store listeners to ensure they are removed correctly
@@ -300,47 +308,3 @@ export const useInternalCommandControl = () => {
   }
   return context;
 };
-
-// Add type declaration for BleManager
-declare module 'react-native-ble-manager' {
-  interface BleManager {
-    start: (options?: { showAlert?: boolean }) => Promise<void>;
-    checkState: () => void;
-    enableBluetooth: () => Promise<void>;
-    scan: (
-      serviceUUIDs: string[],
-      seconds: number,
-      allowDuplicates: boolean,
-    ) => Promise<void>;
-    stopScan: () => Promise<void>;
-    connect: (peripheralId: string) => Promise<void>;
-    disconnect: (peripheralId: string) => Promise<void>;
-    retrieveServices: (peripheralId: string) => Promise<Peripheral>;
-    startNotification: (
-      peripheralId: string,
-      serviceUUID: string,
-      characteristicUUID: string,
-    ) => Promise<void>;
-    stopNotification: (
-      peripheralId: string,
-      serviceUUID: string,
-      characteristicUUID: string,
-    ) => Promise<void>;
-    write: (
-      peripheralId: string,
-      serviceUUID: string,
-      characteristicUUID: string,
-      data: number[],
-    ) => Promise<void>;
-    writeWithoutResponse: (
-      peripheralId: string,
-      serviceUUID: string,
-      characteristicUUID: string,
-      data: number[],
-    ) => Promise<void>;
-  }
-
-  const BleManager: BleManager;
-}
-
-export default BleManager;

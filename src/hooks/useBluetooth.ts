@@ -31,16 +31,36 @@ interface DeferredPromise<T> {
   reject: (reason: Error) => void;
 }
 
-const createDeferredPromise = <T>(): DeferredPromise<T> => {
-  let resolveFn!: (value: T) => void;
+function createDeferredPromise<T>(): DeferredPromise<T> {
+  let resolveFn!: (value: T | PromiseLike<T>) => void;
   let rejectFn!: (reason: Error) => void;
 
   const promise = new Promise<T>((resolve, reject) => {
-    resolveFn = resolve;
-    rejectFn = reject;
+    resolveFn = resolve;  // This automatically has the correct type
+    rejectFn = reject;    // This automatically has the correct type
   });
 
   return { promise, resolve: resolveFn, reject: rejectFn };
+}
+
+// Update error handling to convert BleError to Error
+const handleError = (error: unknown): Error => {
+  if (error instanceof Error) {
+    return error;
+  }
+  // Handle BleError type
+  if (typeof error === 'object' && error !== null && 'errorCode' in error && 'message' in error) {
+    return new Error(`BLE Error (${(error as BleError).errorCode}): ${(error as BleError).message}`);
+  }
+  return new Error(String(error));
+};
+
+// Fix error handling for null cases
+const handleStateError = (error: BleError | Error | null): Error => {
+  if (!error) {
+    return new Error('An unknown error occurred');
+  }
+  return handleError(error);
 };
 
 /**
@@ -146,9 +166,10 @@ export const useBluetooth = (): UseBluetoothResult => {
       dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: allGranted });
       return allGranted;
     } catch (error) {
-      console.error('[useBluetooth] Permission check failed:', error);
+      const formattedError = handleError(error);
+      console.error('[useBluetooth] Permission check failed:', formattedError);
       dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: false });
-      dispatch({ type: 'SET_ERROR', payload: error as Error });
+      dispatch({ type: 'SET_ERROR', payload: formattedError });
       return false;
     }
   }, [dispatch]);
@@ -256,9 +277,10 @@ export const useBluetooth = (): UseBluetoothResult => {
 
         return finalGranted;
       } catch (error) {
-        console.error('[useBluetooth] Permission request failed:', error);
+        const formattedError = handleError(error);
+        console.error('[useBluetooth] Permission request failed:', formattedError);
         dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: false });
-        dispatch({ type: 'SET_ERROR', payload: error as Error });
+        dispatch({ type: 'SET_ERROR', payload: formattedError });
         return false;
       }
     }, [dispatch]);
@@ -291,13 +313,13 @@ export const useBluetooth = (): UseBluetoothResult => {
         // The actual state change (isBluetoothOn = true) will be triggered
         // by the BleManagerDidUpdateState listener if the user accepts.
       } catch (error) {
-        // Handle common errors, e.g., user denying the prompt
+        const formattedError = handleError(error);
         console.error(
           '[useBluetooth] Failed to request Bluetooth enable (e.g., user denied):',
-          error,
+          formattedError,
         );
         throw new Error(
-          `Failed to enable Bluetooth: ${error instanceof Error ? error.message : String(error)}`,
+          `Failed to enable Bluetooth: ${formattedError.message}`,
         );
       }
     } else if (Platform.OS === 'ios') {
@@ -371,7 +393,8 @@ export const useBluetooth = (): UseBluetoothResult => {
         await scanPromiseRef.current.promise;
         clearTimeout(timeoutId);
       } catch (error) {
-        console.error('[useBluetooth] Scan error:', error);
+        const formattedError = handleError(error);
+        console.error('[useBluetooth] Scan error:', formattedError);
         // Cleanup
         if (state.isScanning) {
           try {
@@ -383,13 +406,13 @@ export const useBluetooth = (): UseBluetoothResult => {
             );
           }
         }
-        dispatch({ type: 'SET_ERROR', payload: error as BleError | Error });
+        dispatch({ type: 'SET_ERROR', payload: formattedError });
         dispatch({ type: 'SCAN_STOP' });
         if (scanPromiseRef.current) {
-          scanPromiseRef.current.reject(error);
+          scanPromiseRef.current.reject(handleStateError(state.error));
           scanPromiseRef.current = null;
         }
-        throw error;
+        throw formattedError;
       }
 
       return scanPromiseRef.current?.promise;
@@ -555,13 +578,14 @@ export const useBluetooth = (): UseBluetoothResult => {
           );
         }
       } catch (error) {
+        const formattedError = handleError(error);
         console.error(
           `[useBluetooth] Connection process failed for ${deviceId}:`,
-          error,
+          formattedError,
         );
         dispatch({
           type: 'CONNECT_FAILURE',
-          payload: error as BleError | Error,
+          payload: formattedError,
         });
         // Attempt cleanup: disconnect if possible
         try {
@@ -575,9 +599,9 @@ export const useBluetooth = (): UseBluetoothResult => {
             disconnectError,
           );
         }
-        connectPromiseRef.current?.reject(error);
+        connectPromiseRef.current?.reject(formattedError);
         connectPromiseRef.current = null; // Clear ref
-        throw error; // Re-throw error
+        throw formattedError; // Re-throw error
       }
     },
     [state.isConnecting, state.connectedDevice, dispatch],
@@ -628,13 +652,14 @@ export const useBluetooth = (): UseBluetoothResult => {
       dispatch({ type: 'DISCONNECT_SUCCESS' }); // Optional: signal immediate success after call
       disconnectPromiseRef.current?.resolve();
     } catch (error) {
-      console.error(`[useBluetooth] Disconnect failed for ${deviceId}:`, error);
+      const formattedError = handleError(error);
+      console.error(`[useBluetooth] Disconnect failed for ${deviceId}:`, formattedError);
       dispatch({
         type: 'DISCONNECT_FAILURE',
-        payload: error as BleError | Error,
+        payload: formattedError,
       });
-      disconnectPromiseRef.current?.reject(error);
-      throw error; // Re-throw
+      disconnectPromiseRef.current?.reject(formattedError);
+      throw formattedError; // Re-throw
     } finally {
       disconnectPromiseRef.current = null; // Clear ref
     }
@@ -734,9 +759,10 @@ export const useBluetooth = (): UseBluetoothResult => {
         const response = await deferredPromise.promise;
         return response;
       } catch (error) {
+        const formattedError = handleError(error);
         console.error(
           `[useBluetooth] Error during command execution or processing "${command}":`,
-          error,
+          formattedError,
         );
         if (
           currentCommandRef.current?.promise === deferredPromise &&
@@ -750,13 +776,13 @@ export const useBluetooth = (): UseBluetoothResult => {
         ) {
           dispatch({
             type: 'COMMAND_FAILURE',
-            payload: error as BleError | Error,
+            payload: formattedError,
           });
         }
         if (currentCommandRef.current?.promise === deferredPromise) {
           currentCommandRef.current = null;
         }
-        throw error;
+        throw formattedError;
       }
     },
     [
@@ -833,7 +859,7 @@ export const useBluetooth = (): UseBluetoothResult => {
       if (state.error && state.error.message.includes('Scan timed out')) {
         scanPromiseRef.current.resolve();
       } else if (state.error) {
-        scanPromiseRef.current.reject(state.error);
+        scanPromiseRef.current.reject(handleStateError(state.error));
       } else {
         scanPromiseRef.current.resolve();
       }

@@ -94,21 +94,8 @@ export function bluetoothReducer(
     }
 
     case 'DEVICE_FOUND': {
-      const newDevice = action.payload;
-      const deviceExists = state.discoveredDevices.some(
-        d => d.id === newDevice.id,
-      );
-      return {
-        ...state,
-        discoveredDevices: deviceExists
-          ? state.discoveredDevices
-          : [...state.discoveredDevices, newDevice],
-      };
-    }
-
-    case 'DEVICE_DISCOVERED': {
       const newDevices = state.discoveredDevices.filter(
-        device => device.id !== action.payload?.id,
+        device => device.id !== action.payload.id,
       );
       newDevices.push(action.payload);
       return {
@@ -142,7 +129,7 @@ export function bluetoothReducer(
         error: action.payload,
       };
 
-    case 'DEVICE_DISCONNECTED':
+    case 'DEVICE_DISCONNECTED': {
       return {
         ...state,
         connectedDevice: null,
@@ -153,6 +140,7 @@ export function bluetoothReducer(
         isStreaming: false,
         lastSuccessfulCommandTimestamp: null,
       };
+    }
 
     case 'DISCONNECT_START':
       return { ...state, isDisconnecting: true };
@@ -167,18 +155,6 @@ export function bluetoothReducer(
 
     case 'DISCONNECT_FAILURE':
       return { ...state, isDisconnecting: false, error: action.payload };
-
-    case 'UNEXPECTED_DISCONNECT': {
-      const error = new Error('Device disconnected unexpectedly');
-      return {
-        ...state,
-        error,
-        isConnecting: false,
-        isDisconnecting: false,
-        connectedDevice: null,
-        activeDeviceConfig: null,
-      };
-    }
 
     // --- Command Actions ---
     case 'SEND_COMMAND_START':
