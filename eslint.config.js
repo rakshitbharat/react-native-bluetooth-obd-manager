@@ -33,7 +33,7 @@ module.exports = [
       '**/node_modules/**',
       'lib/**',
       'dist/**',
-      'coverage/**', // Make sure coverage is ignored
+      'coverage/**',
       'example/**',
       '__mocks__/**',
       '__tests__/**',
@@ -41,8 +41,6 @@ module.exports = [
       '.husky/**',
       '.yarn/**',
       'docs/**',
-      'lib/**',
-      'test/**',
     ],
     languageOptions: {
       ecmaVersion: 'latest',
@@ -59,11 +57,20 @@ module.exports = [
       'no-unused-vars': 'warn',
       'no-console': ['warn', { allow: ['warn', 'error', 'info'] }],
       'no-empty': ['error', { allowEmptyCatch: true }],
+      'react-native/no-inline-styles': 'warn',
+      'react-native/no-unused-styles': 'warn',
+      'react-native/split-platform-components': 'warn',
+      'react-native/no-color-literals': 'warn',
+      'react-native/no-raw-text': 'warn',
+      'react-native/no-single-element-style-arrays': 'warn',
+    },
+    plugins: ['react-native'],
+    settings: {
+      'react-native/style-sheet-object-names': ['StyleSheet', 'ViewStyles', 'TextStyles']
     }
   },
   ...compat.config({
     extends: [
-      '@react-native-community',
       'eslint:recommended',
       'plugin:react/recommended',
       'plugin:react-hooks/recommended',
