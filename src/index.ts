@@ -1,5 +1,3 @@
-// src/index.ts
-
 /**
  * React Native Bluetooth OBD Manager
  *
