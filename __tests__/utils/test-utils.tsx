@@ -1,6 +1,24 @@
 import React from 'react';
 import { View } from 'react-native';
+import { NativeEventEmitter } from 'react-native';
+import { BluetoothProvider } from '../../src/context/BluetoothProvider';
 
+// Mock the native event emitter
+const mockNativeEventEmitter = {
+  addListener: jest.fn(),
+  removeListener: jest.fn(),
+  removeAllListeners: jest.fn()
+};
+
+jest.mock('react-native', () => {
+  const RN = jest.requireActual('react-native');
+  return {
+    ...RN,
+    NativeEventEmitter: jest.fn(() => mockNativeEventEmitter)
+  };
+});
+
+// Initial context value for testing
 const initialContextValue = {
   state: {
     isInitializing: false,
@@ -11,6 +29,11 @@ const initialContextValue = {
   dispatch: jest.fn()
 };
 
+// Create a wrapper that provides the BluetoothProvider context
+export const wrapper = ({ children }: { children: React.ReactNode }) => (
+  <BluetoothProvider>{children}</BluetoothProvider>
+);
+
 // Create a simple wrapper that doesn't depend on BluetoothProvider
 export const createWrapper = () => {
   return ({ children }: { children: React.ReactNode }) => (
@@ -18,23 +41,41 @@ export const createWrapper = () => {
   );
 };
 
-// Helper for emitting mock BLE events in tests
-export const emitMockBleEvent = (eventName: string, eventData: any): void => {
-  const listeners = mockNativeEventEmitter.addListener.mock.calls
-    .filter(call => call[0] === eventName)
-    .map(call => call[1]);
-    
-  listeners.forEach(listener => {
-    if (typeof listener === 'function') {
-      listener(eventData);
-    }
-  });
+// Mock connection setup helper
+export const setupConnectedState = async (result: any) => {
+  const deviceId = 'test-device';
+  
+  // First set permissions
+  await result.current.checkPermissions();
+  
+  // Then connect to device
+  await result.current.connectToDevice(deviceId);
+  
+  // Verify connection
+  expect(result.current.connectedDevice).not.toBeNull();
+  expect(result.current.connectedDevice?.id).toBe(deviceId);
+  
+  return deviceId;
 };
 
-// Add a basic test to satisfy Jest's requirement
-describe('test-utils', () => {
-  it('creates a valid wrapper component', () => {
-    const Wrapper = createWrapper();
-    expect(Wrapper).toBeDefined();
+// Helper for emitting mock BLE events in tests
+export const emitMockBleEvent = (eventName: string, eventData: any): void => {
+  // Direct implementation without depending on mockNativeEventEmitter
+  // This assumes your event system has a way to emit events
+  // For tests, you might need to call the handlers directly
+  if (typeof global.bleEventHandlers !== 'undefined') {
+    const handlers = global.bleEventHandlers[eventName] || [];
+    handlers.forEach((handler: Function) => handler(eventData));
+  }
+};
+
+// Add a test to satisfy Jest's requirement for at least one test per file
+describe('Test Utils', () => {
+  it('should have a working wrapper component', () => {
+    expect(wrapper).toBeDefined();
+  });
+  
+  it('should have a setupConnectedState function', () => {
+    expect(typeof setupConnectedState).toBe('function');
   });
 });
