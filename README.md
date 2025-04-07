@@ -24,6 +24,7 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
     *   Configurable command timeouts.
     *   Error handling for writes, timeouts, and disconnects.
 *   **Raw Byte Commands:** Option to send commands and receive the **complete** raw `Uint8Array` response (`sendCommandRaw`) after the `>` prompt is detected.
+*   **Chunked Response:** Advanced option to receive responses with preserved packet boundaries (`sendCommandRawChunked`) useful for protocols requiring exact chunk boundaries or line breaks.
 *   **Connection Management:** Graceful `connectToDevice` and `disconnect` functions.
 *   **Real-time Disconnect Detection:** Automatically updates connection state if the device disconnects unexpectedly.
 *   **Streaming Helper State:** Includes state (`isStreaming`) and control (`setStreaming`) managed by the application, plus an **automatic inactivity timeout** (~4s) managed by the library to detect stalled polling loops.
@@ -141,6 +142,7 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
         connectToDevice,
         disconnect,
         sendCommand,
+        sendCommandRawChunked,
         sendCommandRaw,
         setStreaming,
       } = useBluetooth();
@@ -477,6 +479,14 @@ The `useBluetooth` hook provides the primary interface for interacting with Blue
     *   Identical to `sendCommand` in operation (sends command, waits for `>`), but resolves with the **complete** raw response as a **`Uint8Array`** (excluding the final `>` byte). Useful for non-ASCII or binary responses where exact byte values are needed.
     *   Updates `lastSuccessfulCommandTimestamp` on success.
     *   Rejects on error (not connected, command pending, write error, timeout, disconnect during command).
+*   `sendCommandRawChunked(command: string, options?: { timeout?: number }): Promise<ChunkedResponse>`
+    *   Similar to `sendCommandRaw`, but preserves the original data packet boundaries as received from the BLE characteristic.
+    *   Returns a `ChunkedResponse` object containing:
+        *   `data: Uint8Array` - The complete flattened response (excluding the prompt byte)
+        *   `chunks: Uint8Array[]` - Array of individual response chunks with preserved boundaries
+    *   Useful when protocol-specific line breaks or packet boundaries must be preserved (e.g., multiline DTC responses).
+    *   Updates `lastSuccessfulCommandTimestamp` on success.
+    *   Rejects on error (not connected, command pending, write error, timeout, disconnect during command).
 *   `setStreaming(shouldStream: boolean): void`
     *   Allows the application to signal its intent to start (`true`) or stop (`false`) continuous data polling.
     *   Updates the library's internal `isStreaming` state flag.
@@ -489,7 +499,7 @@ The `useBluetooth` hook provides the primary interface for interacting with Blue
 *   **PID Parsing:** This library **does not parse** OBD-II responses. Your application needs to implement the logic to convert the string (from `sendCommand`) or byte (from `sendCommandRaw`) responses into meaningful data based on the requested PID and OBD-II standards (SAE J1979).
 *   **Error Handling:** Always wrap function calls (`scanDevices`, `connectToDevice`, `sendCommand`, etc.) in `try...catch` blocks or use `.catch()` on the returned promises to handle potential errors gracefully. Check the `error` state variable for persistent errors.
 *   **Concurrency:** The library prevents sending a new command while `isAwaitingResponse` is true. Ensure your application logic respects this flag or queues commands appropriately.
-*   **Data Buffering:** Both `sendCommand` and `sendCommandRaw` internally buffer incoming data chunks from the BLE device. They only resolve their respective Promises **after** the complete response (signalled by the `>` character) has been received or a timeout occurs. The library does **not** currently provide a mechanism to receive raw data in chunks as it arrives from the BLE characteristic.
+*   **Data Buffering:** Both `sendCommand` and `sendCommandRaw` internally buffer incoming data chunks from the BLE device. They only resolve their respective Promises **after** the complete response (signalled by the `>` character) has been received or a timeout occurs. For preserving exact packet boundaries, use `sendCommandRawChunked`.
 *   **Streaming State Synchronization:** The application should manage its own polling interval (`setInterval`). Use `setStreaming(true)` when starting the interval and `setStreaming(false)` when clearing it. Monitor the `isStreaming` state from the hook; if it becomes `false` unexpectedly (due to inactivity timeout or disconnect), your application should clear its own interval timer.
 
 ## License
