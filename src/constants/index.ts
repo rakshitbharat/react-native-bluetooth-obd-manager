@@ -69,6 +69,15 @@ export const DEFAULT_COMMAND_TIMEOUT = 4000; // 4 seconds
 export const DEFAULT_STREAMING_INACTIVITY_TIMEOUT = 4000; // 4 seconds
 
 /**
+ * Return type options for command execution.
+ */
+export enum CommandReturnType {
+  STRING = 'string',
+  BYTES = 'bytes',
+  CHUNKED = 'chunked',
+}
+
+/**
  * OBD-II command terminator character.
  */
 export const ELM327_PROMPT = '>';
