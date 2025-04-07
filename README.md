@@ -294,7 +294,7 @@ The `useBluetooth` hook returns an object with the following properties:
 *   `connectedDevice: Peripheral | null`: The `Peripheral` object of the currently connected device, or `null`.
 *   `activeDeviceConfig: ActiveDeviceConfig | null`: Contains the specific Service/Characteristic UUIDs and write type being used for the connected device. `null` if not connected.
 *   `isAwaitingResponse: boolean`: `true` if `sendCommand` or `sendCommandRaw` has been called and is waiting for the `>` prompt from the adapter.
-*   `isStreaming: boolean`: `true` if the application has indicated (via `setStreaming(true)`) that it intends to perform continuous polling. Automatically set to `false` after a period of inactivity (~4s) with no successful commands.
+*   `isStreaming: boolean`: `true` if the application has indicated (via `setStreaming(true)`) that it intends to perform continuous data polling. Automatically set to `false` after a period of inactivity (~4s) with no successful commands.
 *   `lastSuccessfulCommandTimestamp: number | null`: The `Date.now()` timestamp of the last successfully completed command. Used for the streaming inactivity timer.
 *   `error: Error | BleError | null`: The last error encountered during operations (permissions, scanning, connection, commands). Cleared automatically on the start of some new operations.
 
