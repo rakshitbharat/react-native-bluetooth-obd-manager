@@ -40,6 +40,10 @@ const mockBluetoothHook = {
   disconnect: jest.fn().mockResolvedValue(undefined),
   sendCommand: jest.fn().mockResolvedValue('OK'),
   sendCommandRaw: jest.fn().mockResolvedValue(new Uint8Array([0x4F, 0x4B])),
+  sendCommandRawChunked: jest.fn().mockResolvedValue({
+    data: new Uint8Array([0x4F, 0x4B]), // "OK"
+    chunks: [new Uint8Array([0x4F, 0x4B])]
+  }),
   setStreaming: jest.fn()
 };
 
@@ -135,6 +139,17 @@ describe('useBluetooth Hook Mock Tests', () => {
     const hook = useBluetooth();
     hook.setStreaming(true);
     expect(hook.setStreaming).toHaveBeenCalledWith(true);
+  });
+
+  // Add test for sendCommandRawChunked
+  it('should allow sending commands with chunked responses', async () => {
+    const command = 'ATZ';
+    const hook = useBluetooth();
+    const response = await hook.sendCommandRawChunked(command);
+    expect(response).toHaveProperty('data');
+    expect(response).toHaveProperty('chunks');
+    expect(response.chunks).toBeInstanceOf(Array);
+    expect(hook.sendCommandRawChunked).toHaveBeenCalledWith(command);
   });
 
   // Test state changes
