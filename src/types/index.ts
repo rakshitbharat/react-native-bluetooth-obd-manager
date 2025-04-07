@@ -77,11 +77,23 @@ export interface BleDisconnectPeripheralEvent {
   reason?: string;
 }
 
+/**
+ * Interface representing chunked Bluetooth response data.
+ * Each element in the array represents a distinct data packet received.
+ */
+export interface ChunkedResponse {
+  /** The complete flattened byte array (excluding the prompt byte) */
+  data: Uint8Array;
+  /** The original response chunks as received from the device */
+  chunks: Uint8Array[];
+}
+
 export interface CommandExecutionState {
-  promise: DeferredPromise<string | Uint8Array>;
+  promise: DeferredPromise<string | Uint8Array | ChunkedResponse>;
   timeoutId: NodeJS.Timeout | null;
   responseBuffer: number[];
-  expectedReturnType: 'string' | 'bytes';
+  responseChunks: number[][];
+  expectedReturnType: 'string' | 'bytes' | 'chunked';
 }
 
 export interface CurrentCommand {
@@ -238,6 +250,18 @@ export interface UseBluetoothResult extends BluetoothContextState {
     command: string,
     options?: { timeout?: number },
   ) => Promise<Uint8Array>;
+
+  /**
+   * Sends a command to the connected ELM327 device and returns the response as
+   * an array of chunks, preserving the original data packet boundaries.
+   * @param command The command to send
+   * @param options Options for command execution
+   * @returns Promise resolving to the chunked response
+   */
+  sendCommandRawChunked: (
+    command: string,
+    options?: { timeout?: number },
+  ) => Promise<ChunkedResponse>;
 
   /**
    * Sets the streaming state.

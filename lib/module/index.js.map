@@ -1,1 +1,1 @@
-{"version":3,"names":[],"sourceRoot":"../../src","sources":["index.ts"],"mappings":"","ignoreList":[]}
+{"version":3,"names":["BluetoothProvider","useBluetooth"],"sourceRoot":"../../src","sources":["index.ts"],"mappings":"AAAA;;AAEA;AACA;AACA;AACA;AACA;AACA;AACA;AACA;;AAEA;AACA;AACA;AACA;AACA,SAASA,iBAAiB,QAAQ,6BAA6B;;AAE/D;AACA;AACA;AACA;AACA,SAASC,YAAY,QAAQ,sBAAsB;;AAEnD;;AASA","ignoreList":[]}
