@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 import BleManager, { type Peripheral } from 'react-native-ble-manager';
 import * as Permissions from 'react-native-permissions';
 import type { PermissionStatus } from 'react-native-permissions';
-import type { BleError } from '../types';
+import type { BleError, ChunkedResponse } from '../types';
 // Import converter if needed for specific byte manipulations, TextDecoder is often built-in now
 // import { stringToBytes } from 'convert-string'; // Example if needed
 // TextDecoder/TextEncoder are generally globally available in modern RN environments
@@ -20,17 +20,16 @@ import {
   DEFAULT_COMMAND_TIMEOUT,
   ELM327_COMMAND_TERMINATOR,
   ELM327_PROMPT_BYTE,
+  CommandReturnType,
 } from '../constants';
-import type { ActiveDeviceConfig, UseBluetoothResult } from '../types';
+import type {
+  ActiveDeviceConfig,
+  UseBluetoothResult,
+  DeferredPromise,
+} from '../types';
 
 // Helper to create Promises that can be resolved/rejected externally
 // This is crucial for managing async operations triggered by BLE events
-interface DeferredPromise<T> {
-  promise: Promise<T>;
-  resolve: (value: T | PromiseLike<T>) => void;
-  reject: (reason: Error) => void;
-}
-
 function createDeferredPromise<T>(): DeferredPromise<T> {
   let resolveFn!: (value: T | PromiseLike<T>) => void;
   let rejectFn!: (reason: Error) => void;
@@ -691,12 +690,13 @@ export const useBluetooth = (): UseBluetoothResult => {
 
   // --- Command Functions ---
 
+  // Updated executeCommand to handle the chunked return type
   const executeCommand = useCallback(
     async (
       command: string,
-      returnType: 'string' | 'bytes',
+      returnType: string,
       options?: { timeout?: number },
-    ): Promise<string | Uint8Array> => {
+    ): Promise<string | Uint8Array | ChunkedResponse> => {
       if (!state.connectedDevice || !state.activeDeviceConfig) {
         throw new Error('Not connected to a device.');
       }
@@ -722,14 +722,17 @@ export const useBluetooth = (): UseBluetoothResult => {
         `[useBluetooth] Sending command: "${command}" (Expect: ${returnType}, Timeout: ${commandTimeoutDuration}ms)`,
       );
 
-      const deferredPromise = createDeferredPromise<string | Uint8Array>();
+      const deferredPromise = createDeferredPromise<
+        string | Uint8Array | ChunkedResponse
+      >();
       let timeoutId: NodeJS.Timeout | null = null;
 
       currentCommandRef.current = {
         promise: deferredPromise,
         timeoutId: null,
         responseBuffer: [],
-        expectedReturnType: returnType,
+        responseChunks: [], // Initialize empty response chunks array
+        expectedReturnType: returnType as 'string' | 'bytes' | 'chunked',
       };
 
       dispatch({ type: 'SEND_COMMAND_START' });
@@ -818,10 +821,14 @@ export const useBluetooth = (): UseBluetoothResult => {
       command: string,
       options?: { timeout?: number },
     ): Promise<string> => {
-      const result = await executeCommand(command, 'string', options);
+      const result = await executeCommand(
+        command,
+        CommandReturnType.STRING,
+        options,
+      );
       if (typeof result !== 'string') {
         throw new Error(
-          'Internal error: Expected string response but received bytes.',
+          'Internal error: Expected string response but received bytes or chunks.',
         );
       }
       return result;
@@ -834,13 +841,38 @@ export const useBluetooth = (): UseBluetoothResult => {
       command: string,
       options?: { timeout?: number },
     ): Promise<Uint8Array> => {
-      const result = await executeCommand(command, 'bytes', options);
+      const result = await executeCommand(
+        command,
+        CommandReturnType.BYTES,
+        options,
+      );
       if (!(result instanceof Uint8Array)) {
         throw new Error(
-          'Internal error: Expected byte response but received string.',
+          'Internal error: Expected byte response but received string or chunks.',
         );
       }
       return result;
+    },
+    [executeCommand],
+  );
+
+  // New function for chunked responses
+  const sendCommandRawChunked = useCallback(
+    async (
+      command: string,
+      options?: { timeout?: number },
+    ): Promise<ChunkedResponse> => {
+      const result = await executeCommand(
+        command,
+        CommandReturnType.CHUNKED,
+        options,
+      );
+      if (typeof result === 'string' || result instanceof Uint8Array) {
+        throw new Error(
+          'Internal error: Expected chunked response but received string or bytes.',
+        );
+      }
+      return result as ChunkedResponse;
     },
     [executeCommand],
   );
@@ -971,6 +1003,7 @@ export const useBluetooth = (): UseBluetoothResult => {
     requestBluetoothPermissions,
     promptEnableBluetooth,
     sendCommandRaw,
+    sendCommandRawChunked,
     setStreaming,
   };
 };
