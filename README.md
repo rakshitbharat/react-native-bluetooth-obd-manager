@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/react-native-bluetooth-obd-manager.svg?style=flat)](https://www.npmjs.com/package/react-native-bluetooth-obd-manager)
 [![npm downloads](https://img.shields.io/npm/dm/react-native-bluetooth-obd-manager.svg?style=flat)](https://www.npmjs.com/package/react-native-bluetooth-obd-manager)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-<!-- Add Build Status / Coverage badges here once CI/CD is set up -->
+<!-- TODO: Add Build Status / Coverage badges here once CI/CD is set up -->
 
 A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low Energy (BLE) communication with ELM327-compatible OBD-II adapters. It handles device scanning, smart connection (auto-detecting common ELM327 service/characteristic patterns), command execution (AT commands, OBD PIDs), streaming state, and connection management.
 
@@ -23,9 +23,11 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
     *   Waiting for ELM327 prompt (`>`) to signal response completion.
     *   Configurable command timeouts.
     *   Error handling for writes, timeouts, and disconnects.
+*   **Raw Byte Commands:** Option to send commands and receive the **complete** raw `Uint8Array` response (`sendCommandRaw`) after the `>` prompt is detected.
 *   **Connection Management:** Graceful `connectToDevice` and `disconnect` functions.
 *   **Real-time Disconnect Detection:** Automatically updates connection state if the device disconnects unexpectedly.
 *   **Streaming Helper State:** Includes state (`isStreaming`) and control (`setStreaming`) managed by the application, plus an **automatic inactivity timeout** (~4s) managed by the library to detect stalled polling loops.
+*   **TypeScript Support:** Written entirely in TypeScript with strict typings.
 
 ## Installation
 
@@ -107,23 +109,30 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
     ```tsx
     // YourMainAppComponent.tsx
     import React, { useState, useEffect, useCallback, useRef } from 'react';
-    import { View, Text, Button, FlatList, TouchableOpacity, ActivityIndicator, Alert, ScrollView, StyleSheet } from 'react-native';
-    import { useBluetooth, type PeripheralWithPrediction, type BleError } from 'react-native-bluetooth-obd-manager';
+    import {
+      View, Text, Button, FlatList, TouchableOpacity, ActivityIndicator,
+      Alert, ScrollView, StyleSheet, Switch
+    } from 'react-native';
+    import {
+      useBluetooth,
+      type PeripheralWithPrediction,
+      type BleError // Optional: for more specific error type checking
+    } from 'react-native-bluetooth-obd-manager';
 
     const YourMainAppComponent = () => {
       // Get state and functions from the hook
       const {
         isBluetoothOn,
         hasPermissions,
-        isInitializing, // Useful to show loading indicator initially
+        isInitializing,
         isScanning,
         discoveredDevices,
         connectedDevice,
         isConnecting,
         isDisconnecting,
         error,
-        isAwaitingResponse, // True when waiting for command response
-        isStreaming, // Reflects streaming intention and activity
+        isAwaitingResponse,
+        isStreaming,
         lastSuccessfulCommandTimestamp,
         checkPermissions,
         requestBluetoothPermissions,
@@ -139,6 +148,7 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
       const [lastResponse, setLastResponse] = useState<string | null>(null);
       const [lastRawResponse, setLastRawResponse] = useState<Uint8Array | null>(null);
       const [isLoadingCommand, setIsLoadingCommand] = useState(false);
+      const [appIsStreaming, setAppIsStreaming] = useState(false); // App's view of streaming
 
       // Ref for streaming interval
       const streamIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -149,23 +159,27 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
         checkPermissions();
       }, [checkPermissions]);
 
-      // Effect to cleanup streaming on unmount or disconnect
+      // Effect to synchronize app's streaming state with library's state
+      // (Handles case where library stops streaming due to inactivity/disconnect)
       useEffect(() => {
-        if (!connectedDevice && streamIntervalRef.current) {
-            console.log("Device disconnected, stopping stream interval.");
-            clearInterval(streamIntervalRef.current);
-            streamIntervalRef.current = null;
-            if (isStreaming) {
-                setStreaming(false); // Ensure library state is updated
-            }
-        }
-        // Cleanup on unmount
-        return () => {
+        if (!isStreaming && appIsStreaming) {
+            console.log("Library stopped streaming (inactivity/disconnect), stopping app interval.");
             if (streamIntervalRef.current) {
                 clearInterval(streamIntervalRef.current);
+                streamIntervalRef.current = null;
             }
+            setAppIsStreaming(false); // Update app state
+        }
+      }, [isStreaming, appIsStreaming]);
+
+      // Effect to cleanup streaming on unmount
+      useEffect(() => {
+        return () => {
+          if (streamIntervalRef.current) {
+            clearInterval(streamIntervalRef.current);
+          }
         };
-      }, [connectedDevice, isStreaming, setStreaming]);
+      }, []);
 
 
       // --- Handlers ---
@@ -192,12 +206,12 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
       }, [isConnecting, connectedDevice, connectToDevice]);
 
       const handleDisconnect = useCallback(async () => {
-        stopDataStream(); // Stop polling if active
+        await stopDataStream(); // Use await here
         if (connectedDevice) {
           try { await disconnect(); Alert.alert('Disconnected'); setLastResponse(null); setLastRawResponse(null); }
           catch (err: any) { Alert.alert('Disconnect Error', err.message); }
         }
-      }, [connectedDevice, disconnect, stopDataStream]); // Added stopDataStream
+      }, [connectedDevice, disconnect, stopDataStream]); // Added stopDataStream dependency
 
       const handleSendCommand = useCallback(async (cmd: string) => {
         if (!connectedDevice) { Alert.alert("Not Connected"); return; }
@@ -216,8 +230,8 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
         try {
           const response = await sendCommandRaw(cmd);
           setLastRawResponse(response);
-           // TODO: Parse raw 'response' bytes here
            console.log(`Raw Response Bytes: [${response.join(', ')}]`);
+           // TODO: Parse raw 'response' bytes here
         } catch (err: any) { Alert.alert(`Raw Command Error (${cmd})`, err.message); }
         finally { setIsLoadingCommand(false); }
       }, [connectedDevice, sendCommandRaw]);
@@ -225,54 +239,66 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
 
       // --- Streaming Logic ---
       const fetchDataForStream = useCallback(async () => {
-         if (!connectedDevice || !isStreaming) {
-             // If library detected inactivity and set isStreaming false, stop interval
-             if(streamIntervalRef.current) stopDataStream();
+         // Check app's view of streaming intention AND library's state
+         if (!appIsStreaming || !isStreaming || !connectedDevice) {
+             console.log("fetchDataForStream: Stopping condition met.");
+             await stopDataStream(); // Ensure stopped if condition not met
              return;
          };
+         console.log("Stream: Fetching...");
          try {
             // Fetch multiple PIDs - NOTE: sendCommand awaits each response
-            console.log("Stream: Fetching RPM...");
-            const rpmResponse = await sendCommand('010C', { timeout: 1500 }); // Shorter timeout for streaming
+            // Use shorter timeouts for better responsiveness in streaming
+            const rpmResponse = await sendCommand('010C', { timeout: 1500 });
             // TODO: Parse RPM
-            console.log("Stream: Fetching Speed...");
             const speedResponse = await sendCommand('010D', { timeout: 1500 });
             // TODO: Parse Speed
-            setLastResponse(`RPM: ${rpmResponse} | Speed: ${speedResponse}`); // Update UI minimally
+            setLastResponse(`RPM: ${rpmResponse} | Speed: ${speedResponse}`); // Update UI
             // Library automatically updates lastSuccessfulCommandTimestamp internally
          } catch (err: any) {
              console.error("Streaming fetch error:", err.message);
-             // Library's inactivity timer will eventually stop isStreaming if errors persist
-             // You could add logic here to stop sooner based on error type/count
-             // if (err.message.includes('timeout')) { /* ... maybe stop stream ... */ }
+             // Library's inactivity timer will eventually stop isStreaming if errors persist.
+             // The effect monitoring isStreaming will then stop the app's interval.
          }
-      }, [connectedDevice, isStreaming, sendCommand, stopDataStream]); // Added stopDataStream
+      }, [appIsStreaming, isStreaming, connectedDevice, sendCommand, stopDataStream]); // Added stopDataStream
 
+      // Function called by button/switch to START polling
       const startDataStream = useCallback(() => {
-         if (!connectedDevice || isStreaming || streamIntervalRef.current) return;
+         if (!connectedDevice || appIsStreaming || streamIntervalRef.current) return;
          console.log("Starting data stream...");
-         setStreaming(true); // Signal intention to stream
+         setAppIsStreaming(true); // Update app state
+         setStreaming(true); // Signal intention to library
          // Fetch immediately then start interval
          fetchDataForStream();
-         streamIntervalRef.current = setInterval(fetchDataForStream, 1000); // Fetch every second
-      }, [connectedDevice, isStreaming, setStreaming, fetchDataForStream]);
+         streamIntervalRef.current = setInterval(fetchDataForStream, 1000); // Adjust interval as needed
+      }, [connectedDevice, appIsStreaming, setStreaming, fetchDataForStream]);
 
-      // Memoize stopDataStream
-       const stopDataStream = useCallback(() => {
+      // Function called by button/switch to STOP polling
+      const stopDataStream = useCallback(async () => { // Made async for potential await inside
          if (streamIntervalRef.current) {
             console.log("Stopping data stream...");
             clearInterval(streamIntervalRef.current);
             streamIntervalRef.current = null;
-            // Only signal stop to library if it thinks we are still streaming
-            if (isStreaming) {
-                 setStreaming(false);
-            }
          }
-      }, [isStreaming, setStreaming]);
+         // Always update app state and library state when explicitly stopping
+         setAppIsStreaming(false);
+         setStreaming(false); // Signal stop intention to library
+
+      }, [setStreaming]); // Removed isStreaming dependency to allow explicit stop
 
 
       // --- Render Device Item ---
-      const renderDeviceItem = ({ item }: { item: PeripheralWithPrediction }) => ( /* ... as before ... */ );
+      const renderDeviceItem = ({ item }: { item: PeripheralWithPrediction }) => (
+        <TouchableOpacity
+          onPress={() => handleConnect(item)}
+          disabled={isConnecting || !!connectedDevice}
+          style={[styles.listItem, {backgroundColor: item.isLikelyOBD ? '#e0ffe0' : 'white'}]}
+        >
+          <Text style={{ fontWeight: 'bold' }}>{item.name || 'Unnamed Device'}</Text>
+          <Text>ID: {item.id}</Text>
+          <Text>RSSI: {item.rssi} {item.isLikelyOBD ? '(Likely OBD)' : ''}</Text>
+        </TouchableOpacity>
+      );
 
 
       // --- Main Render ---
@@ -287,8 +313,8 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
             <Text>Bluetooth: {isBluetoothOn ? 'ON' : 'OFF'}</Text>
             <Text>Permissions: {hasPermissions ? 'Granted' : 'Missing'}</Text>
             <Text>Status: {connectedDevice ? `Connected to ${connectedDevice.name || connectedDevice.id}` : 'Disconnected'}</Text>
-            {isConnecting && <Text>Connecting...</Text>}
-            {isDisconnecting && <Text>Disconnecting...</Text>}
+            {isConnecting && <Text style={styles.infoText}>Connecting...</Text>}
+            {isDisconnecting && <Text style={styles.infoText}>Disconnecting...</Text>}
             {error && <Text style={styles.errorText}>Error: {(error as Error)?.message ?? 'Unknown error'}</Text>}
           </View>
 
@@ -296,11 +322,11 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
           <View style={styles.buttonGroup}>
             {!isBluetoothOn && <Button title="Enable Bluetooth" onPress={handleEnableBluetooth} />}
             {!hasPermissions && <Button title="Request Permissions" onPress={handleRequestPermissions} />}
-            <Button title={isScanning ? 'Scanning...' : 'Scan Devices (5s)'} onPress={handleScan} disabled={isScanning || !isBluetoothOn || !hasPermissions} />
+            <Button title={isScanning ? 'Scanning...' : 'Scan Devices (5s)'} onPress={handleScan} disabled={isScanning || !isBluetoothOn || !hasPermissions || !!connectedDevice} />
           </View>
 
           {/* Discovered Devices List */}
-          {isScanning || discoveredDevices.length > 0 ? (
+          {!connectedDevice && (isScanning || discoveredDevices.length > 0) ? (
             <>
               <Text style={styles.sectionTitle}>Discovered Devices:</Text>
               <FlatList
@@ -347,10 +373,10 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
 
               {/* Streaming Controls */}
                <Text style={styles.subSectionTitle}>Real-time Data:</Text>
-               <Text>(Status: {isStreaming ? `Streaming Active (Last OK: ${lastSuccessfulCommandTimestamp ? new Date(lastSuccessfulCommandTimestamp).toLocaleTimeString() : 'N/A'})` : 'Streaming Inactive'})</Text>
+               <Text>Status: {appIsStreaming ? `Polling Active` : 'Polling Inactive'} {isStreaming && appIsStreaming ? `(Library OK - Last OK: ${lastSuccessfulCommandTimestamp ? new Date(lastSuccessfulCommandTimestamp).toLocaleTimeString() : 'N/A'})` : isStreaming && !appIsStreaming ? '(Library thinks active?)' : ''}</Text>
                <View style={styles.buttonGroup}>
-                   <Button title="Start Stream (RPM/Speed)" onPress={startDataStream} disabled={isStreaming || isLoadingCommand || isAwaitingResponse} />
-                   <Button title="Stop Stream" onPress={stopDataStream} disabled={!isStreaming && !streamIntervalRef.current} />
+                   <Button title="Start Polling" onPress={startDataStream} disabled={appIsStreaming || isLoadingCommand || isAwaitingResponse} />
+                   <Button title="Stop Polling" onPress={stopDataStream} disabled={!appIsStreaming} />
                </View>
 
               {/* Disconnect */}
@@ -362,21 +388,23 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
       );
     };
 
-    // Basic Styling (add more as needed)
+    // Basic Styling
     const styles = StyleSheet.create({
       container: { flex: 1 },
-      contentContainer: { padding: 15 },
-      centered: { flex: 1, justifyContent: 'center', alignItems: 'center'},
-      statusBox: { padding: 10, marginBottom: 10, backgroundColor: '#f0f0f0', borderRadius: 5 },
-      errorText: { color: 'red', marginTop: 5 },
-      buttonGroup: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginVertical: 10 },
+      contentContainer: { padding: 15, paddingBottom: 50 }, // Added padding bottom
+      centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+      statusBox: { padding: 10, marginBottom: 10, backgroundColor: '#f0f0f0', borderRadius: 5, borderWidth: 1, borderColor: '#ddd'},
+      infoText: { fontStyle: 'italic', color: '#333'},
+      errorText: { color: 'red', marginTop: 5, fontWeight: 'bold' },
+      buttonGroup: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginVertical: 10, flexWrap: 'wrap', gap: 10 },
       buttonGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginVertical: 5, gap: 10},
       sectionTitle: { fontSize: 18, fontWeight: 'bold', marginTop: 15, marginBottom: 5 },
       subSectionTitle: { fontSize: 16, fontWeight: '600', marginTop: 10, marginBottom: 5 },
       list: { maxHeight: 250, borderWidth: 1, borderColor: '#ccc', borderRadius: 5, marginBottom: 10 },
-      emptyList: { padding: 15, textAlign: 'center', fontStyle: 'italic' },
+      listItem: { padding: 10, borderBottomWidth: 1, borderColor: '#eee'},
+      emptyList: { padding: 15, textAlign: 'center', fontStyle: 'italic', color: '#777' },
       section: { marginTop: 20, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 15 },
-      responseBox: { marginTop: 10, padding: 8, backgroundColor: '#e8f4f8', borderRadius: 3 },
+      responseBox: { marginTop: 10, padding: 8, backgroundColor: '#e8f4f8', borderRadius: 3, borderWidth: 1, borderColor: '#c7e0e8' },
       responseTitle: { fontWeight: 'bold' },
       responseText: { fontFamily: 'monospace', marginTop: 3 },
       parseNote: { fontStyle: 'italic', fontSize: 10, color: '#555', marginTop: 2 },
@@ -401,7 +429,7 @@ The `useBluetooth` hook provides the primary interface for interacting with Blue
 *   `connectedDevice: Peripheral | null`: Holds the `Peripheral` object of the currently connected OBD adapter, or `null` if no device is connected. This is the source of truth for connection status.
 *   `activeDeviceConfig: ActiveDeviceConfig | null`: If connected, contains the specific BLE `serviceUUID`, `writeCharacteristicUUID`, `notifyCharacteristicUUID`, and determined `writeType` ('Write' or 'WriteWithoutResponse') being used for communication. `null` otherwise.
 *   `isAwaitingResponse: boolean`: `true` when `sendCommand` or `sendCommandRaw` has been called and the library is actively waiting for the response terminator (`>`) from the adapter. Use this to prevent sending concurrent commands.
-*   `isStreaming: boolean`: Reflects the intended streaming state set by `setStreaming()` and automatically managed by the inactivity timer. `true` means the app intends to poll data and the library hasn't detected inactivity. `false` means streaming is off or was stopped due to inactivity.
+*   `isStreaming: boolean`: Reflects the intended streaming state set by `setStreaming()` **and** whether the library's automatic inactivity timer has stopped it. `true` means the app intends to poll data and the library hasn't detected inactivity. `false` means streaming is off or was stopped due to inactivity/disconnect. Monitor this state in your app to synchronize your polling loop.
 *   `lastSuccessfulCommandTimestamp: number | null`: The `Date.now()` timestamp marking the completion of the last successful command (string or raw). Used by the streaming inactivity timer. `null` if no commands have succeeded recently or streaming is off.
 *   `error: Error | BleError | null`: Holds the last error object encountered during any operation (permissions, scan, connect, command, etc.). Can be checked to display error messages. It's often cleared when a new operation starts.
 
@@ -441,19 +469,19 @@ The `useBluetooth` hook provides the primary interface for interacting with Blue
 *   `sendCommand(command: string, options?: { timeout?: number }): Promise<string>`
     *   Sends an AT or OBD command string to the connected device. **Do not include `\r`**.
     *   `options.timeout` (optional, default: ~4000ms): Custom timeout in milliseconds for waiting for the `>` response terminator for this specific command.
-    *   Automatically appends `\r`, selects the correct BLE write method, waits for the complete response ending in `>`, and handles timeouts.
+    *   Automatically appends `\r`, selects the correct BLE write method, waits for the **complete response** ending in `>`, and handles timeouts.
     *   Updates `lastSuccessfulCommandTimestamp` on success.
     *   Resolves with the trimmed response **string** (excluding `>`).
     *   Rejects on error (not connected, command pending, write error, timeout, disconnect during command).
 *   `sendCommandRaw(command: string, options?: { timeout?: number }): Promise<Uint8Array>`
-    *   Identical to `sendCommand` in operation, but resolves with the raw response bytes as a **`Uint8Array`** (excluding the final `>` byte). Useful for non-ASCII or binary responses.
+    *   Identical to `sendCommand` in operation (sends command, waits for `>`), but resolves with the **complete** raw response as a **`Uint8Array`** (excluding the final `>` byte). Useful for non-ASCII or binary responses where exact byte values are needed.
     *   Updates `lastSuccessfulCommandTimestamp` on success.
     *   Rejects on error (not connected, command pending, write error, timeout, disconnect during command).
 *   `setStreaming(shouldStream: boolean): void`
     *   Allows the application to signal its intent to start (`true`) or stop (`false`) continuous data polling.
-    *   Updates the `isStreaming` state.
-    *   Setting to `true` resets the `lastSuccessfulCommandTimestamp` and enables the library's internal inactivity timer.
-    *   Setting to `false` disables the inactivity timer and clears the timestamp.
+    *   Updates the library's internal `isStreaming` state flag.
+    *   Setting to `true` resets the `lastSuccessfulCommandTimestamp` and **enables** the library's internal inactivity timer (~4 seconds).
+    *   Setting to `false` **disables** the inactivity timer and clears the timestamp. Your application should call this when *explicitly* stopping its polling loop.
 
 ## Important Notes
 
@@ -461,6 +489,8 @@ The `useBluetooth` hook provides the primary interface for interacting with Blue
 *   **PID Parsing:** This library **does not parse** OBD-II responses. Your application needs to implement the logic to convert the string (from `sendCommand`) or byte (from `sendCommandRaw`) responses into meaningful data based on the requested PID and OBD-II standards (SAE J1979).
 *   **Error Handling:** Always wrap function calls (`scanDevices`, `connectToDevice`, `sendCommand`, etc.) in `try...catch` blocks or use `.catch()` on the returned promises to handle potential errors gracefully. Check the `error` state variable for persistent errors.
 *   **Concurrency:** The library prevents sending a new command while `isAwaitingResponse` is true. Ensure your application logic respects this flag or queues commands appropriately.
+*   **Data Buffering:** Both `sendCommand` and `sendCommandRaw` internally buffer incoming data chunks from the BLE device. They only resolve their respective Promises **after** the complete response (signalled by the `>` character) has been received or a timeout occurs. The library does **not** currently provide a mechanism to receive raw data in chunks as it arrives from the BLE characteristic.
+*   **Streaming State Synchronization:** The application should manage its own polling interval (`setInterval`). Use `setStreaming(true)` when starting the interval and `setStreaming(false)` when clearing it. Monitor the `isStreaming` state from the hook; if it becomes `false` unexpectedly (due to inactivity timeout or disconnect), your application should clear its own interval timer.
 
 ## License
 
