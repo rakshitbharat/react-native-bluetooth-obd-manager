@@ -17,11 +17,10 @@
     }
   },
   "files": [
-    "lib",
-    "!lib/**/__tests__",
-    "!lib/**/__fixtures__",
-    "!lib/**/__mocks__",
-    "!lib/typescript/example"
+    "lib/commonjs",
+    "lib/module",
+    "lib/typescript/src/*.d.ts",
+    "lib/typescript/src/**/*.d.ts"
   ],
   "scripts": {
     "build": "yarn clean && bob build",
