@@ -10,5 +10,6 @@ module.exports = {
   maxWorkers: 1,
   transformIgnorePatterns: [
     'node_modules/(?!(react-native|@react-native)/)'
-  ]
+  ],
+  testPathIgnorePatterns: ['<rootDir>/lib/'], // Exclude lib folder
 };
