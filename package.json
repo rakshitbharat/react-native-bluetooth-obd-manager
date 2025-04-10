@@ -1,6 +1,6 @@
 {
   "name": "react-native-bluetooth-obd-manager",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A React Native hook library to manage Bluetooth Low Energy connections and communication with ELM327 OBD-II adapters.",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
@@ -150,21 +150,30 @@
     "source": "src",
     "output": "lib",
     "targets": [
-      ["commonjs", {
-        "configFile": "./babel.config.cjs",
-        "sourceMaps": true,
-        "includeBuildMetadata": true
-      }],
-      ["module", {
-        "configFile": "./babel.config.cjs",
-        "sourceMaps": true,
-        "includeBuildMetadata": true
-      }],
-      ["typescript", {
-        "project": "tsconfig.build.json",
-        "tsc": "./node_modules/.bin/tsc",
-        "declarationOnly": true
-      }]
+      [
+        "commonjs",
+        {
+          "configFile": "./babel.config.cjs",
+          "sourceMaps": true,
+          "includeBuildMetadata": true
+        }
+      ],
+      [
+        "module",
+        {
+          "configFile": "./babel.config.cjs",
+          "sourceMaps": true,
+          "includeBuildMetadata": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json",
+          "tsc": "./node_modules/.bin/tsc",
+          "declarationOnly": true
+        }
+      ]
     ]
   },
   "lint-staged": {
