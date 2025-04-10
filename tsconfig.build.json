@@ -1,9 +1,20 @@
-// tsconfig.build.json
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "module": "esnext"
-    // Removed "outDir": "lib/module" as it conflicts with CLI options
+    "rootDir": ".",
+    "outDir": "lib/typescript",
+    "declarationDir": "lib/typescript",
+    "declaration": true,
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "isolatedModules": true,
+    "skipLibCheck": true
   },
-  "exclude": ["__tests__", "example", "lib", "node_modules"]
+  "exclude": [
+    "**/__tests__",
+    "**/__mocks__",
+    "example",
+    "lib"
+  ],
+  "include": ["src"]
 }
