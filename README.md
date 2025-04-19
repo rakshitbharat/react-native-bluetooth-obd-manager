@@ -11,6 +11,7 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
 
 ## Features
 
+*   **Safe Initialization:** Provides `isInitializing` state to safely handle the async initialization of Bluetooth functionality.
 *   **Simple Hook Interface:** Manage all BLE OBD interactions via the `useBluetooth` hook.
 *   **State Management:** Provides reactive state for Bluetooth power status, permissions, scanning activity, connection status, command status, streaming status, errors, etc.
 *   **Permission Handling:** Includes functions to check (`checkPermissions`) and request (`requestBluetoothPermissions`) necessary permissions (Location, Bluetooth Scan/Connect) directly via the hook.
@@ -85,16 +86,15 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
 
 ## Usage
 
-1.  **Wrap your app with `BluetoothProvider`:**
+1.  **Wrap your app with `BluetoothProvider` and handle initialization:**
 
     ```tsx
     // App.tsx or similar entry point
     import React from 'react';
     import { BluetoothProvider } from 'react-native-bluetooth-obd-manager';
-    import YourMainAppComponent from './YourMainAppComponent'; // Your main app component
+    import YourMainAppComponent from './YourMainAppComponent';
 
     const App = () => {
-      // Ensure BleManager and Permissions native modules are linked correctly!
       return (
         <BluetoothProvider>
           <YourMainAppComponent />
@@ -103,7 +103,37 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
     };
 
     export default App;
+
+    // YourMainAppComponent.tsx
+    import React from 'react';
+    import { View, Text, ActivityIndicator } from 'react-native';
+    import { useBluetooth } from 'react-native-bluetooth-obd-manager';
+
+    const YourMainAppComponent = () => {
+      const { isInitializing } = useBluetooth();
+
+      // Important: Wait for BluetoothProvider to initialize
+      if (isInitializing) {
+        return (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" />
+            <Text>Initializing Bluetooth...</Text>
+          </View>
+        );
+      }
+
+      // Render your main component UI only after initialization is complete
+      return (
+        <View>
+          {/* Your component content */}
+        </View>
+      );
+    };
+
+    export default YourMainAppComponent;
     ```
+
+    **⚠️ Important:** Always check `isInitializing` from the `useBluetooth` hook before using any Bluetooth functionality. The `BluetoothProvider` performs asynchronous initialization of the native Bluetooth module, and your components should wait for this to complete.
 
 2.  **Use the `useBluetooth` hook:**
 
@@ -125,7 +155,7 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
       const {
         isBluetoothOn,
         hasPermissions,
-        isInitializing,
+        isInitializing, // <-- Destructure the initializing flag
         isScanning,
         discoveredDevices,
         connectedDevice,
@@ -213,7 +243,7 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
           try { await disconnect(); Alert.alert('Disconnected'); setLastResponse(null); setLastRawResponse(null); }
           catch (err: any) { Alert.alert('Disconnect Error', err.message); }
         }
-      }, [connectedDevice, disconnect, stopDataStream]); // Added stopDataStream dependency
+      }, [connectedDevice, disconnect, stopDataStream]);
 
       const handleSendCommand = useCallback(async (cmd: string) => {
         if (!connectedDevice) { Alert.alert("Not Connected"); return; }
@@ -262,7 +292,7 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
              // Library's inactivity timer will eventually stop isStreaming if errors persist.
              // The effect monitoring isStreaming will then stop the app's interval.
          }
-      }, [appIsStreaming, isStreaming, connectedDevice, sendCommand, stopDataStream]); // Added stopDataStream
+      }, [appIsStreaming, isStreaming, connectedDevice, sendCommand, stopDataStream]);
 
       // Function called by button/switch to START polling
       const startDataStream = useCallback(() => {
@@ -286,7 +316,7 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
          setAppIsStreaming(false);
          setStreaming(false); // Signal stop intention to library
 
-      }, [setStreaming]); // Removed isStreaming dependency to allow explicit stop
+      }, [setStreaming]);
 
 
       // --- Render Device Item ---
@@ -304,10 +334,17 @@ A React Native hook library (`useBluetooth`) designed to simplify Bluetooth Low 
 
 
       // --- Main Render ---
+      // Add the check for isInitializing
       if (isInitializing) {
-        return <View style={styles.centered}><ActivityIndicator size="large" /><Text>Initializing Bluetooth...</Text></View>;
+        return (
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" />
+            <Text>Initializing Bluetooth...</Text>
+          </View>
+        );
       }
 
+      // Render the rest of the component only when not initializing
       return (
         <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
           {/* Status Section */}
@@ -494,6 +531,12 @@ The `useBluetooth` hook provides the primary interface for interacting with Blue
     *   Setting to `false` **disables** the inactivity timer and clears the timestamp. Your application should call this when *explicitly* stopping its polling loop.
 
 ## Important Notes
+
+*   **Initialization Handling:** Components using the `useBluetooth` hook **must** check the `isInitializing` state before accessing any Bluetooth functionality. This is critical because:
+    * The `BluetoothProvider` needs time to initialize the native Bluetooth module
+    * Attempting to use Bluetooth functions before initialization is complete may cause errors
+    * Always render a loading state when `isInitializing` is `true`
+    * Only render your main component UI after `isInitializing` becomes `false`
 
 *   **Native Setup:** Correctly installing and configuring `react-native-ble-manager` and `react-native-permissions` for both iOS and Android is **essential** for this library to function. Refer to their official documentation.
 *   **PID Parsing:** This library **does not parse** OBD-II responses. Your application needs to implement the logic to convert the string (from `sendCommand`) or byte (from `sendCommandRaw`) responses into meaningful data based on the requested PID and OBD-II standards (SAE J1979).
