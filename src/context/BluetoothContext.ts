@@ -2,24 +2,16 @@
 
 import React, { createContext } from 'react';
 import type { BluetoothState, BluetoothDispatch } from '../types';
+import { initialState } from './BluetoothReducer';
 
-/**
- * Context for accessing the Bluetooth state values.
- * Consumers should use `useContext(BluetoothStateContext)`.
- */
-export const BluetoothStateContext = createContext<BluetoothState | undefined>(
-  undefined,
-);
+// Context creation with proper typing
+export const BluetoothStateContext =
+  createContext<BluetoothState>(initialState);
+export const BluetoothDispatchContext = createContext<BluetoothDispatch>(() => {
+  console.warn('BluetoothDispatch was called before provider was ready');
+});
 
-/**
- * Context for accessing the dispatch function to update Bluetooth state.
- * Consumers should use `useContext(BluetoothDispatchContext)`.
- */
-export const BluetoothDispatchContext = createContext<
-  BluetoothDispatch | undefined
->(undefined);
-
-// Optional: Provider names for React DevTools
+// Set display names for React DevTools
 BluetoothStateContext.displayName = 'BluetoothStateContext';
 BluetoothDispatchContext.displayName = 'BluetoothDispatchContext';
 
