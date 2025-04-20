@@ -246,11 +246,11 @@ export const useBluetooth = (): UseBluetoothResult => {
         let iosBluetoothGranted = true;
         if (Platform.OS === 'ios' && iosBlePermissionNeeded) {
           console.info('[useBluetooth] Requesting iOS Bluetooth permission...');
-          // Updated to use BLUETOOTH instead of BLUETOOTH_PERIPHERAL
-          const bleStatus = await Permissions.request(
-            Permissions.PERMISSIONS.IOS.BLUETOOTH,
-          );
-          finalStatuses[Permissions.PERMISSIONS.IOS.BLUETOOTH] = bleStatus;
+          // Updated to use BLUETOOTH_PERIPHERAL
+          const blePermission =
+            Permissions.PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL;
+          const bleStatus = await Permissions.request(blePermission);
+          finalStatuses[blePermission] = bleStatus; // Use the variable
           iosBluetoothGranted =
             bleStatus === Permissions.RESULTS.GRANTED ||
             bleStatus === Permissions.RESULTS.UNAVAILABLE;
@@ -508,12 +508,25 @@ export const useBluetooth = (): UseBluetoothResult => {
             console.info(
               `[useBluetooth] Found matching service: ${target.name} (${target.serviceUUID})`,
             );
+            // --- BEGIN ADDED LOGGING ---
+            console.info(
+              `[useBluetooth] All characteristics reported by peripheral:`,
+              JSON.stringify(peripheralInfo.characteristics, null, 2),
+            );
+            // --- END ADDED LOGGING ---
             // Check characteristics *within the peripheralInfo object* first
             const characteristics =
               peripheralInfo.characteristics?.filter(
                 (c: { service: string }) =>
                   c.service.toUpperCase() === serviceUUIDUpper,
               ) ?? [];
+
+            // --- BEGIN ADDED LOGGING ---
+            console.info(
+              `[useBluetooth] Characteristics filtered for service ${serviceUUIDUpper}:`,
+              JSON.stringify(characteristics, null, 2),
+            );
+            // --- END ADDED LOGGING ---
 
             const writeCharacteristic = characteristics.find(
               (c: { characteristic: string }) =>
@@ -523,6 +536,15 @@ export const useBluetooth = (): UseBluetoothResult => {
               (c: { characteristic: string }) =>
                 c.characteristic.toUpperCase() === notifyCharUUIDUpper,
             );
+
+            // --- BEGIN ADDED LOGGING ---
+            console.info(
+              `[useBluetooth] Searching for Write Characteristic: ${writeCharUUIDUpper}. Found: ${!!writeCharacteristic}`,
+            );
+            console.info(
+              `[useBluetooth] Searching for Notify Characteristic: ${notifyCharUUIDUpper}. Found: ${!!notifyCharacteristic}`,
+            );
+            // --- END ADDED LOGGING ---
 
             if (writeCharacteristic && notifyCharacteristic) {
               console.info(
