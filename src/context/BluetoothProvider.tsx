@@ -101,35 +101,33 @@ export function BluetoothProvider({
   const [state, dispatch] = useReducer(bluetoothReducer, initialState);
   const currentCommandRef = useRef<CommandExecutionState | null>(null);
 
+  /**
+   * Handles incoming data from BLE characteristic notifications.
+   * Processes response chunks and resolves command promises when complete.
+   *
+   * @param dataValue - Array of bytes received from the BLE device
+   */
   const handleIncomingData = useCallback(
     (dataValue: number[]) => {
       if (state.isAwaitingResponse && currentCommandRef.current) {
         try {
           const commandState = currentCommandRef.current;
-
-          // Store the chunk as-is in the chunks array
           commandState.responseChunks.push([...dataValue]);
-
-          // Also add to flat buffer as before
           commandState.responseBuffer.push(...dataValue);
 
           const promptIndex =
             commandState.responseBuffer.indexOf(ELM327_PROMPT_BYTE);
           if (promptIndex !== -1) {
-            // Extract the complete response (excluding the prompt byte)
             const responseBytes = commandState.responseBuffer.slice(
               0,
               promptIndex,
             );
-
-            // Process the response chunks - find and trim the chunk containing the prompt
             const processedChunks = processResponseChunks(
               commandState.responseChunks,
               commandState.responseBuffer,
               promptIndex,
             );
 
-            // Clear buffers
             commandState.responseBuffer = [];
             commandState.responseChunks = [];
 
@@ -137,7 +135,6 @@ export function BluetoothProvider({
               clearTimeout(commandState.timeoutId);
             }
 
-            // Create the appropriate response based on expected return type
             let response;
             switch (commandState.expectedReturnType) {
               case CommandReturnType.STRING:
@@ -176,27 +173,28 @@ export function BluetoothProvider({
     [state.isAwaitingResponse],
   );
 
-  // Helper function to process response chunks and remove the prompt byte
+  /**
+   * Processes response chunks to handle partial responses and remove prompt bytes.
+   *
+   * @param chunks - Array of received data chunks
+   * @param flatBuffer - Complete response buffer
+   * @param promptIndex - Index of the prompt byte in the flat buffer
+   * @returns Processed chunks with prompt byte removed
+   */
   const processResponseChunks = (
     chunks: number[][],
     flatBuffer: number[],
     promptIndex: number,
   ): number[][] => {
-    const processedChunks = [...chunks]; // Copy array to avoid mutation
-
-    // Find which chunk contains the prompt byte
+    const processedChunks = [...chunks];
     let runningLength = 0;
+
     for (let i = 0; i < processedChunks.length; i++) {
       const chunkLength = processedChunks[i].length;
 
       if (runningLength + chunkLength > promptIndex) {
-        // This chunk contains the prompt
         const promptPositionInChunk = promptIndex - runningLength;
-
-        // Trim this chunk to exclude the prompt byte
         processedChunks[i] = processedChunks[i].slice(0, promptPositionInChunk);
-
-        // Remove any chunks after this one (they would be after the prompt)
         processedChunks.splice(i + 1);
         break;
       }
@@ -207,7 +205,13 @@ export function BluetoothProvider({
     return processedChunks;
   };
 
-  // Helper function to decode response
+  /**
+   * Decodes a byte array response into a string using TextDecoder.
+   * Falls back to String.fromCharCode if TextDecoder fails.
+   *
+   * @param bytes - Array of bytes to decode
+   * @returns Decoded string with whitespace trimmed
+   */
   const decodeResponse = (bytes: number[]): string => {
     try {
       return new TextDecoder().decode(Uint8Array.from(bytes)).trim();
@@ -220,7 +224,12 @@ export function BluetoothProvider({
     }
   };
 
-  // Fix error rejection types
+  /**
+   * Ensures consistent error handling by converting any error type to Error.
+   *
+   * @param error - The error to handle
+   * @returns A standardized Error object
+   */
   const handleError = (error: unknown): Error => {
     if (error instanceof Error) {
       return error;
@@ -231,19 +240,20 @@ export function BluetoothProvider({
   // Use refs to store listeners to ensure they are removed correctly
   const listenersRef = useRef<EmitterSubscription[]>([]);
 
-  // Effect 1: Initialize BleManager on mount
+  /**
+   * Initializes the BLE manager and checks initial Bluetooth state.
+   * This effect runs once when the component mounts.
+   */
   useEffect(() => {
     console.info('[BluetoothProvider] Initializing BleManager...');
-    // Start BleManager
+
     BleManager.start({ showAlert: false })
       .then(() => {
         console.info('[BluetoothProvider] BleManager started successfully.');
         dispatch({ type: 'SET_INITIALIZING', payload: false });
-        // Optionally check initial Bluetooth state after start
         BleManager.checkState();
       })
       .catch((error: Error) => {
-        // Add Error type annotation
         console.error('[BluetoothProvider] BleManager failed to start:', error);
         dispatch({ type: 'SET_INITIALIZING', payload: false });
         dispatch({
@@ -251,15 +261,18 @@ export function BluetoothProvider({
           payload: new Error(`BleManager failed to start: ${error}`),
         });
       });
-  }, []); // Runs only once on mount
+  }, []);
 
-  // Effect 2: Set up BleManager event listeners
+  /**
+   * Sets up BLE event listeners for managing device state and communication.
+   * Handles state changes, device discovery, disconnections, and data notifications.
+   * Re-runs when the connected device ID changes to ensure proper disconnect handling.
+   */
   useEffect(() => {
-    const listeners: EmitterSubscription[] = []; // Temporary array for this effect run
-
+    const listeners: EmitterSubscription[] = [];
     console.info('[BluetoothProvider] Setting up BLE listeners...');
 
-    // Listener for Bluetooth State Changes (ON/OFF)
+    // Bluetooth State Change Listener
     listeners.push(
       bleManagerEmitter.addListener(
         'BleManagerDidUpdateState',
@@ -276,12 +289,11 @@ export function BluetoothProvider({
       ),
     );
 
-    // Listener for Discovered Devices during Scan
+    // Device Discovery Listener
     listeners.push(
       bleManagerEmitter.addListener(
         'BleManagerDiscoverPeripheral',
         (peripheral: Peripheral) => {
-          // Add basic isLikelyOBD heuristic here (TODO: Refine this logic)
           const name = peripheral.name?.toUpperCase() || '';
           const likelyOBDKeywords = [
             'OBD',
@@ -297,15 +309,14 @@ export function BluetoothProvider({
 
           const peripheralWithPrediction: PeripheralWithPrediction = {
             ...peripheral,
-            isLikelyOBD: isLikelyOBD, // Set the flag
+            isLikelyOBD,
           };
-          // console.info(`[BluetoothProvider] Discovered: ${peripheral.name || peripheral.id}, LikelyOBD: ${isLikelyOBD}`);
           dispatch({ type: 'DEVICE_FOUND', payload: peripheralWithPrediction });
         },
       ),
     );
 
-    // Listener for Scan Stop Event
+    // Scan Completion Listener
     listeners.push(
       bleManagerEmitter.addListener('BleManagerStopScan', () => {
         console.info('[BluetoothProvider] BleManagerStopScan received.');
@@ -313,7 +324,7 @@ export function BluetoothProvider({
       }),
     );
 
-    // Listener for Device Disconnection (Expected or Unexpected)
+    // Device Disconnection Listener
     listeners.push(
       bleManagerEmitter.addListener(
         'BleManagerDisconnectPeripheral',
@@ -341,7 +352,7 @@ export function BluetoothProvider({
       ),
     );
 
-    // Listener for Incoming Data Notifications
+    // Data Notification Listener
     listeners.push(
       bleManagerEmitter.addListener(
         'BleManagerDidUpdateValueForCharacteristic',
@@ -351,18 +362,19 @@ export function BluetoothProvider({
       ),
     );
 
-    listenersRef.current = listeners; // Store listeners in ref
+    listenersRef.current = listeners;
 
-    // Cleanup function: Remove all listeners when the component unmounts
     return () => {
       console.info('[BluetoothProvider] Removing BLE listeners...');
       listenersRef.current.forEach(listener => listener.remove());
-      listenersRef.current = []; // Clear the ref
+      listenersRef.current = [];
     };
-    // Re-run this effect if the connectedDevice ID changes,
-    // primarily to ensure the disconnect listener comparison is up-to-date.
   }, [state.connectedDevice?.id, handleIncomingData]);
 
+  /**
+   * Memoized value for the command control context.
+   * This prevents unnecessary re-renders of context consumers.
+   */
   const commandControlValue = useMemo(
     () => ({
       currentCommandRef,
@@ -383,12 +395,21 @@ export function BluetoothProvider({
 
 /**
  * Internal hook for accessing the command control context.
- * This is used by the BluetoothProvider to manage command execution state.
- * Not meant for external consumption.
+ * This hook provides access to the internal command execution state
+ * and is only meant to be used by the library's internal components.
  *
  * @internal
- * @returns Command control context containing the current command reference
- * @throws {Error} If used outside of a BluetoothProvider
+ * @throws {Error} When used outside of a BluetoothProvider
+ * @returns Command control context object containing the current command reference
+ *
+ * @example
+ * ```typescript
+ * // Internal usage only
+ * function InternalComponent() {
+ *   const { currentCommandRef } = useInternalCommandControl();
+ *   // Access command state...
+ * }
+ * ```
  */
 export const useInternalCommandControl = () => {
   const context = React.useContext(InternalCommandControlContext);
