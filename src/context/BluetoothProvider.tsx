@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useReducer,
   useRef,
+  FC,
 } from 'react';
 import {
   NativeEventEmitter,
@@ -95,9 +96,13 @@ InternalCommandControlContext.displayName = 'InternalCommandControlContext';
  * @param props - Component props
  * @returns A provider component that makes Bluetooth functionality available to children
  */
-export function BluetoothProvider({
-  children,
-}: BluetoothProviderProps): JSX.Element {
+export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
+  // Validate React environment inside the component
+  if (!React) {
+    throw new Error(
+      'React is not available in the runtime environment. This usually indicates a dependency resolution issue.'
+    );
+  }
   const [state, dispatch] = useReducer(bluetoothReducer, initialState);
   const currentCommandRef = useRef<CommandExecutionState | null>(null);
 
