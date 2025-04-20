@@ -100,7 +100,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
   // Validate React environment inside the component
   if (!React) {
     throw new Error(
-      'React is not available in the runtime environment. This usually indicates a dependency resolution issue.'
+      'React is not available in the runtime environment. This usually indicates a dependency resolution issue.',
     );
   }
   const [state, dispatch] = useReducer(bluetoothReducer, initialState);
@@ -396,7 +396,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
       </BluetoothDispatchContext.Provider>
     </BluetoothStateContext.Provider>
   );
-}
+};
 
 /**
  * Internal hook for accessing the command control context.
