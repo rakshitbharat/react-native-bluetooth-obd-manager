@@ -7,9 +7,9 @@ import type { BluetoothState, BluetoothAction } from '../types';
  */
 export const initialState: BluetoothState = {
   // Core BLE State
+  isInitializing: true,
   isBluetoothOn: false,
-  hasPermissions: false, // Assume no permissions initially
-  isInitializing: true, // Start in initializing state until BleManager is ready
+  hasPermissions: false,
   error: null,
 
   // Scanning State
@@ -26,7 +26,7 @@ export const initialState: BluetoothState = {
   isAwaitingResponse: false,
 
   // Streaming State
-  isStreaming: false, // Initialize streaming as off
+  isStreaming: false,
   lastSuccessfulCommandTimestamp: null,
 };
 
