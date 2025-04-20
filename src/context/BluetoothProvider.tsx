@@ -1,14 +1,11 @@
 // src/context/BluetoothProvider.tsx
-
 import React, {
+  createContext,
+  useCallback,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
-  useCallback,
-  type ReactNode,
-  type FC,
-  createContext,
-  useMemo,
 } from 'react';
 import {
   NativeEventEmitter,
@@ -22,7 +19,6 @@ import type {
   BleManagerDidUpdateValueForCharacteristicEvent,
   ChunkedResponse,
 } from '../types';
-
 import {
   BluetoothDispatchContext,
   BluetoothStateContext,
@@ -31,15 +27,9 @@ import { bluetoothReducer, initialState } from './BluetoothReducer';
 import type { PeripheralWithPrediction, DeferredPromise } from '../types';
 import { ELM327_PROMPT_BYTE, CommandReturnType } from '../constants';
 
-// Get the BleManager native module and initialize an event emitter
 const BleManagerModule = NativeModules.BleManager;
 const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
 
-interface BluetoothProviderProps {
-  children: ReactNode;
-}
-
-// --- Helper type for Command Refs ---
 interface CommandExecutionState {
   promise: DeferredPromise<string | Uint8Array | ChunkedResponse>;
   timeoutId: NodeJS.Timeout | null;
@@ -48,32 +38,27 @@ interface CommandExecutionState {
   expectedReturnType: 'string' | 'bytes' | 'chunked';
 }
 
+interface BluetoothProviderProps {
+  children: React.ReactNode;
+}
+
 const InternalCommandControlContext = createContext<
   | {
       currentCommandRef: React.MutableRefObject<CommandExecutionState | null>;
     }
   | undefined
 >(undefined);
+
 InternalCommandControlContext.displayName = 'InternalCommandControlContext';
 
 /**
- * Provider component that manages Bluetooth state and event listeners.
- *
- * Initializes BleManager and sets up global event listeners for:
- * - Bluetooth state changes
- * - Device discovery during scanning
- * - Connection/disconnection events
- * - Incoming data notifications
- *
- * Wrap your application with this provider to use the `useBluetooth` hook.
- *
- * @param {BluetoothProviderProps} props Component props
- * @param {ReactNode} props.children Child components that will have access to the Bluetooth context
+ * BluetoothProvider Component
+ * Manages Bluetooth state and provides BLE functionality to child components
  */
-export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
+export function BluetoothProvider({
+  children,
+}: BluetoothProviderProps): JSX.Element {
   const [state, dispatch] = useReducer(bluetoothReducer, initialState);
-
-  // Replace multiple command refs with single execution state ref
   const currentCommandRef = useRef<CommandExecutionState | null>(null);
 
   const handleIncomingData = useCallback(
@@ -338,7 +323,6 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     // primarily to ensure the disconnect listener comparison is up-to-date.
   }, [state.connectedDevice?.id, handleIncomingData]);
 
-  // Memoize context value
   const commandControlValue = useMemo(
     () => ({
       currentCommandRef,
@@ -355,7 +339,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
       </BluetoothDispatchContext.Provider>
     </BluetoothStateContext.Provider>
   );
-};
+}
 
 /**
  * Internal hook for accessing the command control context.

@@ -246,9 +246,8 @@ export const useBluetooth = (): UseBluetoothResult => {
         let iosBluetoothGranted = true;
         if (Platform.OS === 'ios' && iosBlePermissionNeeded) {
           console.info('[useBluetooth] Requesting iOS Bluetooth permission...');
-          // Updated to use BLUETOOTH_PERIPHERAL
-          const blePermission =
-            Permissions.PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL;
+          // Use BLUETOOTH for iOS permission
+          const blePermission = Permissions.PERMISSIONS.IOS.BLUETOOTH;
           const bleStatus = await Permissions.request(blePermission);
           finalStatuses[blePermission] = bleStatus; // Use the variable
           iosBluetoothGranted =
