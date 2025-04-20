@@ -37,7 +37,7 @@ export const initialState: BluetoothState = {
 function validateState(state: BluetoothState): BluetoothState {
   // Ensure arrays are never null
   if (!state.discoveredDevices) state.discoveredDevices = [];
-  
+
   // Ensure boolean flags are never null
   state.isInitializing = !!state.isInitializing;
   state.isBluetoothOn = !!state.isBluetoothOn;

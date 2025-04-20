@@ -102,13 +102,16 @@ interface ErrorBoundaryState {
  * Error Boundary component that catches and handles React errors
  * Provides error recovery, logging, and retry mechanisms
  */
-class BluetoothErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class BluetoothErrorBoundary extends Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = {
       hasError: false,
       error: null,
-      retryCount: 0
+      retryCount: 0,
     };
   }
 
@@ -117,13 +120,13 @@ class BluetoothErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundary
     fallback: null,
     onError: (error: Error) => {
       console.error('[BluetoothErrorBoundary]', error);
-    }
+    },
   };
 
   static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     return {
       hasError: true,
-      error
+      error,
     };
   }
 
@@ -136,7 +139,7 @@ class BluetoothErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundary
     this.setState({
       hasError: false,
       error: null,
-      retryCount: 0
+      retryCount: 0,
     });
   };
 
@@ -148,13 +151,13 @@ class BluetoothErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundary
       this.setState(prev => ({
         hasError: false,
         error: null,
-        retryCount: prev.retryCount + 1
+        retryCount: prev.retryCount + 1,
       }));
     }
   };
 
   render(): React.ReactNode {
-    const { hasError, error, retryCount } = this.state;
+    const { hasError, retryCount } = this.state;
     const { children, fallback, maxRetries = 3 } = this.props;
 
     if (hasError) {
@@ -188,50 +191,63 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
   const currentCommandRef = useRef<CommandExecutionState | null>(null);
   const isInitialized = useRef(false);
 
-  const handleBoundaryError = useCallback((error: Error, errorInfo: ErrorInfo) => {
-    console.error('[BluetoothProvider] Error caught by boundary:', {
-      error,
-      errorInfo,
-      deviceId: state.connectedDevice?.id,
-      isConnecting: state.isConnecting,
-      isScanning: state.isScanning
-    });
-    
-    // Attempt recovery by resetting relevant state
-    dispatch({ type: 'SET_ERROR', payload: error });
-    
-    if (state.isConnecting || state.connectedDevice) {
-      dispatch({ type: 'DEVICE_DISCONNECTED' });
-    }
-    
-    if (state.isScanning) {
-      dispatch({ type: 'SCAN_STOP' });
-    }
-  }, [state.connectedDevice?.id, state.isConnecting, state.isScanning]);
+  const handleBoundaryError = useCallback(
+    (error: Error, errorInfo: ErrorInfo) => {
+      console.error('[BluetoothProvider] Error caught by boundary:', {
+        error,
+        errorInfo,
+        deviceId: state.connectedDevice?.id,
+        isConnecting: state.isConnecting,
+        isScanning: state.isScanning,
+      });
 
-  const fallbackUI = useMemo(() => (
-    <View style={{
-      padding: 20,
-      backgroundColor: '#FEE2E2',
-      borderRadius: 8,
-      margin: 10,
-    }}>
-      <Text style={{
-        color: '#991B1B',
-        fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 8,
-      }}>
-        Bluetooth Connection Error
-      </Text>
-      <Text style={{
-        color: '#7F1D1D',
-        fontSize: 14,
-      }}>
-        There was a problem with the Bluetooth connection. The app will automatically try to recover.
-      </Text>
-    </View>
-  ), []);
+      // Attempt recovery by resetting relevant state
+      dispatch({ type: 'SET_ERROR', payload: error });
+
+      if (state.isConnecting || state.connectedDevice) {
+        dispatch({ type: 'DEVICE_DISCONNECTED' });
+      }
+
+      if (state.isScanning) {
+        dispatch({ type: 'SCAN_STOP' });
+      }
+    },
+    [state.connectedDevice?.id, state.isConnecting, state.isScanning],
+  );
+
+  const fallbackUI = useMemo(
+    () => (
+      <View
+        style={{
+          padding: 20,
+          backgroundColor: '#FEE2E2',
+          borderRadius: 8,
+          margin: 10,
+        }}
+      >
+        <Text
+          style={{
+            color: '#991B1B',
+            fontSize: 16,
+            fontWeight: '600',
+            marginBottom: 8,
+          }}
+        >
+          Bluetooth Connection Error
+        </Text>
+        <Text
+          style={{
+            color: '#7F1D1D',
+            fontSize: 14,
+          }}
+        >
+          There was a problem with the Bluetooth connection. The app will
+          automatically try to recover.
+        </Text>
+      </View>
+    ),
+    [],
+  );
 
   // Ensure state is never null during initialization
   useEffect(() => {
@@ -523,7 +539,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
 
   // Return wrapped in enhanced error boundary
   return (
-    <BluetoothErrorBoundary 
+    <BluetoothErrorBoundary
       onError={handleBoundaryError}
       fallback={fallbackUI}
       maxRetries={3}

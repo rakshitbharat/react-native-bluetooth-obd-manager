@@ -5,8 +5,12 @@ import type { BluetoothState, BluetoothDispatch } from '../types';
 import { initialState } from './BluetoothReducer';
 
 // Context creation with proper typing and null safety
-export const BluetoothStateContext = createContext<BluetoothState | null>(initialState);
-export const BluetoothDispatchContext = createContext<BluetoothDispatch | null>(null);
+export const BluetoothStateContext = createContext<BluetoothState | null>(
+  initialState,
+);
+export const BluetoothDispatchContext = createContext<BluetoothDispatch | null>(
+  null,
+);
 
 // Set display names for React DevTools
 BluetoothStateContext.displayName = 'BluetoothStateContext';
