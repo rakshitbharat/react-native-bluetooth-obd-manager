@@ -30,30 +30,70 @@ import { ELM327_PROMPT_BYTE, CommandReturnType } from '../constants';
 const BleManagerModule = NativeModules.BleManager;
 const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
 
+/**
+ * Represents the state of a command being executed over Bluetooth.
+ * This interface tracks the promise, timeout, and response data for each command.
+ */
 interface CommandExecutionState {
+  /** Promise that will resolve with the command's response */
   promise: DeferredPromise<string | Uint8Array | ChunkedResponse>;
+  /** Timeout ID for command expiration */
   timeoutId: NodeJS.Timeout | null;
+  /** Buffer storing incoming response bytes */
   responseBuffer: number[];
+  /** Array storing each chunk of response data as it arrives */
   responseChunks: number[][];
+  /** Expected format of the command's response */
   expectedReturnType: 'string' | 'bytes' | 'chunked';
 }
 
+/**
+ * Props for the BluetoothProvider component
+ */
 interface BluetoothProviderProps {
+  /** Child components that will have access to Bluetooth context */
   children: React.ReactNode;
 }
 
+/**
+ * Context for internal command control state.
+ * This context is used to manage command execution state across the provider.
+ */
 const InternalCommandControlContext = createContext<
   | {
+      /** Reference to the currently executing command */
       currentCommandRef: React.MutableRefObject<CommandExecutionState | null>;
     }
   | undefined
 >(undefined);
 
+// Set a display name for easier debugging
 InternalCommandControlContext.displayName = 'InternalCommandControlContext';
 
 /**
  * BluetoothProvider Component
- * Manages Bluetooth state and provides BLE functionality to child components
+ *
+ * A React Context Provider that manages Bluetooth LE communication state and operations
+ * for OBD-II vehicle diagnostics. This provider handles:
+ *
+ * - BLE device scanning and discovery
+ * - Connection management
+ * - Command execution and response handling
+ * - Automatic error recovery
+ *
+ * @example
+ * ```tsx
+ * function App() {
+ *   return (
+ *     <BluetoothProvider>
+ *       <VehicleDiagnostics />
+ *     </BluetoothProvider>
+ *   );
+ * }
+ * ```
+ *
+ * @param props - Component props
+ * @returns A provider component that makes Bluetooth functionality available to children
  */
 export function BluetoothProvider({
   children,
