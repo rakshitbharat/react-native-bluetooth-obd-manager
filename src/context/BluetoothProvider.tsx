@@ -7,10 +7,14 @@ import React, {
   useReducer,
   useRef,
   FC,
+  ErrorInfo,
+  Component,
 } from 'react';
 import {
   NativeEventEmitter,
   NativeModules,
+  View,
+  Text,
   type EmitterSubscription,
 } from 'react-native';
 import BleManager from 'react-native-ble-manager';
@@ -72,30 +76,105 @@ const InternalCommandControlContext = createContext<
 InternalCommandControlContext.displayName = 'InternalCommandControlContext';
 
 /**
- * BluetoothProvider Component
- *
- * A React Context Provider that manages Bluetooth LE communication state and operations
- * for OBD-II vehicle diagnostics. This provider handles:
- *
- * - BLE device scanning and discovery
- * - Connection management
- * - Command execution and response handling
- * - Automatic error recovery
- *
- * @example
- * ```tsx
- * function App() {
- *   return (
- *     <BluetoothProvider>
- *       <VehicleDiagnostics />
- *     </BluetoothProvider>
- *   );
- * }
- * ```
- *
- * @param props - Component props
- * @returns A provider component that makes Bluetooth functionality available to children
+ * Interface for Error Boundary props
  */
+interface ErrorBoundaryProps {
+  /** Child components to be rendered */
+  children: React.ReactNode;
+  /** Optional fallback UI to render when an error occurs */
+  fallback?: React.ReactNode;
+  /** Optional callback for handling errors */
+  onError?: (error: Error, errorInfo: ErrorInfo) => void;
+  /** Optional maximum number of retries before giving up */
+  maxRetries?: number;
+}
+
+/**
+ * Interface for Error Boundary state
+ */
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+  retryCount: number;
+}
+
+/**
+ * Error Boundary component that catches and handles React errors
+ * Provides error recovery, logging, and retry mechanisms
+ */
+class BluetoothErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null,
+      retryCount: 0
+    };
+  }
+
+  static defaultProps = {
+    maxRetries: 3,
+    fallback: null,
+    onError: (error: Error) => {
+      console.error('[BluetoothErrorBoundary]', error);
+    }
+  };
+
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
+    return {
+      hasError: true,
+      error
+    };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    // Log error to error reporting service
+    this.props.onError?.(error, errorInfo);
+  }
+
+  private resetError = (): void => {
+    this.setState({
+      hasError: false,
+      error: null,
+      retryCount: 0
+    });
+  };
+
+  private retry = (): void => {
+    const { maxRetries = 3 } = this.props;
+    const { retryCount } = this.state;
+
+    if (retryCount < maxRetries) {
+      this.setState(prev => ({
+        hasError: false,
+        error: null,
+        retryCount: prev.retryCount + 1
+      }));
+    }
+  };
+
+  render(): React.ReactNode {
+    const { hasError, error, retryCount } = this.state;
+    const { children, fallback, maxRetries = 3 } = this.props;
+
+    if (hasError) {
+      if (retryCount < maxRetries) {
+        // Attempt recovery by retrying
+        this.retry();
+        return null;
+      }
+
+      // If we've exceeded retries, show fallback or null
+      return fallback || null;
+    }
+
+    return children;
+  }
+}
+
+// Export for internal use
+export { BluetoothErrorBoundary };
+
 export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
   // Validate React environment inside the component
   if (!React) {
@@ -103,8 +182,64 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
       'React is not available in the runtime environment. This usually indicates a dependency resolution issue.',
     );
   }
+
+  // Initialize reducer with error handling
   const [state, dispatch] = useReducer(bluetoothReducer, initialState);
   const currentCommandRef = useRef<CommandExecutionState | null>(null);
+  const isInitialized = useRef(false);
+
+  const handleBoundaryError = useCallback((error: Error, errorInfo: ErrorInfo) => {
+    console.error('[BluetoothProvider] Error caught by boundary:', {
+      error,
+      errorInfo,
+      deviceId: state.connectedDevice?.id,
+      isConnecting: state.isConnecting,
+      isScanning: state.isScanning
+    });
+    
+    // Attempt recovery by resetting relevant state
+    dispatch({ type: 'SET_ERROR', payload: error });
+    
+    if (state.isConnecting || state.connectedDevice) {
+      dispatch({ type: 'DEVICE_DISCONNECTED' });
+    }
+    
+    if (state.isScanning) {
+      dispatch({ type: 'SCAN_STOP' });
+    }
+  }, [state.connectedDevice?.id, state.isConnecting, state.isScanning]);
+
+  const fallbackUI = useMemo(() => (
+    <View style={{
+      padding: 20,
+      backgroundColor: '#FEE2E2',
+      borderRadius: 8,
+      margin: 10,
+    }}>
+      <Text style={{
+        color: '#991B1B',
+        fontSize: 16,
+        fontWeight: '600',
+        marginBottom: 8,
+      }}>
+        Bluetooth Connection Error
+      </Text>
+      <Text style={{
+        color: '#7F1D1D',
+        fontSize: 14,
+      }}>
+        There was a problem with the Bluetooth connection. The app will automatically try to recover.
+      </Text>
+    </View>
+  ), []);
+
+  // Ensure state is never null during initialization
+  useEffect(() => {
+    if (!isInitialized.current) {
+      dispatch({ type: 'SET_INITIALIZING', payload: true });
+      isInitialized.current = true;
+    }
+  }, []);
 
   /**
    * Handles incoming data from BLE characteristic notifications.
@@ -376,10 +511,9 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     };
   }, [state.connectedDevice?.id, handleIncomingData]);
 
-  /**
-   * Memoized value for the command control context.
-   * This prevents unnecessary re-renders of context consumers.
-   */
+  // Memoized provider value to prevent unnecessary re-renders
+  const stateValue = useMemo(() => state, [state]);
+  const dispatchValue = useMemo(() => dispatch, []);
   const commandControlValue = useMemo(
     () => ({
       currentCommandRef,
@@ -387,14 +521,21 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     [],
   );
 
+  // Return wrapped in enhanced error boundary
   return (
-    <BluetoothStateContext.Provider value={state}>
-      <BluetoothDispatchContext.Provider value={dispatch}>
-        <InternalCommandControlContext.Provider value={commandControlValue}>
-          {children}
-        </InternalCommandControlContext.Provider>
-      </BluetoothDispatchContext.Provider>
-    </BluetoothStateContext.Provider>
+    <BluetoothErrorBoundary 
+      onError={handleBoundaryError}
+      fallback={fallbackUI}
+      maxRetries={3}
+    >
+      <BluetoothStateContext.Provider value={stateValue}>
+        <BluetoothDispatchContext.Provider value={dispatchValue}>
+          <InternalCommandControlContext.Provider value={commandControlValue}>
+            {children}
+          </InternalCommandControlContext.Provider>
+        </BluetoothDispatchContext.Provider>
+      </BluetoothStateContext.Provider>
+    </BluetoothErrorBoundary>
   );
 };
 
