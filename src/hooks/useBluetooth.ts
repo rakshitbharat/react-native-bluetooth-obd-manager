@@ -42,6 +42,22 @@ function createDeferredPromise<T>(): DeferredPromise<T> {
   return { promise, resolve: resolveFn, reject: rejectFn };
 }
 
+// Helper function to extract short UUID (e.g., "FFF0") from standard Base UUID
+function getShortUUID(fullUUID: string): string | null {
+  const baseUUIDSuffix = '-0000-1000-8000-00805F9B34FB';
+  const upperFullUUID = fullUUID.toUpperCase();
+  // Check if it's a standard 16-bit or 32-bit UUID based on the common suffix
+  if (
+    upperFullUUID.startsWith('0000') &&
+    upperFullUUID.endsWith(baseUUIDSuffix)
+  ) {
+    return upperFullUUID.substring(4, 8); // Extract the XXXX part
+  }
+  // Add check for non-standard but common patterns if needed, e.g. VLinker
+  // else if ( specific check for other patterns ) { ... }
+  return null; // Not a standard short UUID pattern we recognize
+}
+
 // Update error handling to convert BleError to Error
 const handleError = (error: unknown): Error => {
   if (error instanceof Error) {
@@ -440,7 +456,7 @@ export const useBluetooth = (): UseBluetoothResult => {
    * This function:
    * 1. Connects to the specified peripheral
    * 2. Retrieves services and characteristics
-   * 3. Finds a compatible ELM327 service/characteristic configuration
+   * 3. Finds a compatible ELM327 service/characteristic configuration (handles short/full UUIDs)
    * 4. Starts notifications on the appropriate characteristic
    *
    * @param {string} deviceId The ID of the device to connect to
@@ -481,10 +497,19 @@ export const useBluetooth = (): UseBluetoothResult => {
         );
 
         // 2. Retrieve Services & Characteristics
+        // Add a small delay before retrieving services, sometimes needed on Android
+        if (Platform.OS === 'android') {
+          await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+        }
         const peripheralInfo = await BleManager.retrieveServices(deviceId);
         console.info(
           `[useBluetooth] Services retrieved for ${deviceId}. Found:`,
           peripheralInfo.services?.map((s: { uuid: string }) => s.uuid),
+          'Characteristics:',
+          peripheralInfo.characteristics?.map(
+            (c: { service: string; characteristic: string }) =>
+              `${c.service}/${c.characteristic}`,
+          ),
         );
         if (!peripheralInfo.services || peripheralInfo.services.length === 0) {
           throw new Error('No services found on this device.');
@@ -493,101 +518,135 @@ export const useBluetooth = (): UseBluetoothResult => {
         // 3. Find Compatible ELM327 Target
         let foundConfig: ActiveDeviceConfig | null = null;
         for (const target of KNOWN_ELM327_TARGETS) {
-          const serviceUUIDUpper = target.serviceUUID.toUpperCase();
-          const writeCharUUIDUpper =
+          const targetServiceUUIDUpper = target.serviceUUID.toUpperCase();
+          const targetWriteCharUUIDUpper =
             target.writeCharacteristicUUID.toUpperCase();
-          const notifyCharUUIDUpper =
+          const targetNotifyCharUUIDUpper =
             target.notifyCharacteristicUUID.toUpperCase();
 
+          // Find service match (full or short UUID)
           const foundService = peripheralInfo.services?.find(
-            (s: { uuid: string }) => s.uuid.toUpperCase() === serviceUUIDUpper,
+            (s: { uuid: string }) => {
+              const peripheralServiceUUIDUpper = s.uuid.toUpperCase();
+              // Direct match (full UUID)
+              if (peripheralServiceUUIDUpper === targetServiceUUIDUpper)
+                return true;
+              // Check if peripheral reported short UUID matches target's short UUID
+              const shortTargetUUID = getShortUUID(targetServiceUUIDUpper);
+              return (
+                shortTargetUUID !== null &&
+                peripheralServiceUUIDUpper === shortTargetUUID
+              );
+            },
           );
 
           if (foundService) {
+            // Use the actual UUID reported by the peripheral for filtering characteristics
+            const peripheralServiceUUIDActualUpper =
+              foundService.uuid.toUpperCase();
             console.info(
-              `[useBluetooth] Found matching service: ${target.name} (${target.serviceUUID})`,
+              `[useBluetooth] Found matching service: ${target.name} (Target: ${target.serviceUUID}, Peripheral reported: ${foundService.uuid}). Checking characteristics...`,
             );
-            // --- BEGIN ADDED LOGGING ---
-            console.info(
-              `[useBluetooth] All characteristics reported by peripheral:`,
-              JSON.stringify(peripheralInfo.characteristics, null, 2),
-            );
-            // --- END ADDED LOGGING ---
-            // Check characteristics *within the peripheralInfo object* first
-            const characteristics =
+
+            // Filter characteristics based on the *actual* service UUID reported by the peripheral
+            const characteristicsForService =
               peripheralInfo.characteristics?.filter(
                 (c: { service: string }) =>
-                  c.service.toUpperCase() === serviceUUIDUpper,
+                  c.service.toUpperCase() === peripheralServiceUUIDActualUpper, // Use the matched peripheral service UUID
               ) ?? [];
 
-            // --- BEGIN ADDED LOGGING ---
             console.info(
-              `[useBluetooth] Characteristics filtered for service ${serviceUUIDUpper}:`,
-              JSON.stringify(characteristics, null, 2),
-            );
-            // --- END ADDED LOGGING ---
-
-            const writeCharacteristic = characteristics.find(
-              (c: { characteristic: string }) =>
-                c.characteristic.toUpperCase() === writeCharUUIDUpper,
-            );
-            const notifyCharacteristic = characteristics.find(
-              (c: { characteristic: string }) =>
-                c.characteristic.toUpperCase() === notifyCharUUIDUpper,
+              `[useBluetooth] Characteristics for service ${foundService.uuid}:`,
+              characteristicsForService.map(
+                (c: { characteristic: string }) => c.characteristic,
+              ),
             );
 
-            // --- BEGIN ADDED LOGGING ---
+            // Find write characteristic match (full or short UUID)
+            const writeCharacteristic = characteristicsForService.find(
+              (c: { characteristic: string }) => {
+                const peripheralCharUUIDUpper = c.characteristic.toUpperCase();
+                if (peripheralCharUUIDUpper === targetWriteCharUUIDUpper)
+                  return true;
+                const shortTargetUUID = getShortUUID(targetWriteCharUUIDUpper);
+                return (
+                  shortTargetUUID !== null &&
+                  peripheralCharUUIDUpper === shortTargetUUID
+                );
+              },
+            );
+
+            // Find notify characteristic match (full or short UUID)
+            const notifyCharacteristic = characteristicsForService.find(
+              (c: { characteristic: string }) => {
+                const peripheralCharUUIDUpper = c.characteristic.toUpperCase();
+                if (peripheralCharUUIDUpper === targetNotifyCharUUIDUpper)
+                  return true;
+                const shortTargetUUID = getShortUUID(targetNotifyCharUUIDUpper);
+                return (
+                  shortTargetUUID !== null &&
+                  peripheralCharUUIDUpper === shortTargetUUID
+                );
+              },
+            );
+
             console.info(
-              `[useBluetooth] Searching for Write Characteristic: ${writeCharUUIDUpper}. Found: ${!!writeCharacteristic}`,
+              `[useBluetooth] Searching for Write Characteristic: ${target.writeCharacteristicUUID} (or short). Found: ${!!writeCharacteristic}`,
             );
             console.info(
-              `[useBluetooth] Searching for Notify Characteristic: ${notifyCharUUIDUpper}. Found: ${!!notifyCharacteristic}`,
+              `[useBluetooth] Searching for Notify Characteristic: ${target.notifyCharacteristicUUID} (or short). Found: ${!!notifyCharacteristic}`,
             );
-            // --- END ADDED LOGGING ---
 
             if (writeCharacteristic && notifyCharacteristic) {
               console.info(
-                `[useBluetooth] Found matching Write (${writeCharUUIDUpper}) and Notify (${notifyCharUUIDUpper}) characteristics.`,
+                `[useBluetooth] Found matching Write (${writeCharacteristic.characteristic}) and Notify (${notifyCharacteristic.characteristic}) characteristics.`,
               );
 
-              // Determine Write Type
+              // Determine Write Type based on *found* characteristic properties
               let writeType: ActiveDeviceConfig['writeType'] =
                 'WriteWithoutResponse'; // Default
               if (writeCharacteristic.properties.Write) {
-                // Check for 'Write' (with response) property
                 writeType = 'Write';
                 console.info(
                   '[useBluetooth] Characteristic supports Write (with response).',
                 );
-              } else {
+              } else if (writeCharacteristic.properties.WriteWithoutResponse) {
                 console.info(
                   '[useBluetooth] Characteristic supports Write Without Response.',
                 );
+              } else {
+                console.warn(
+                  '[useBluetooth] Write characteristic found, but does not explicitly report Write or WriteWithoutResponse property. Assuming WriteWithoutResponse.',
+                );
+                // Keep default 'WriteWithoutResponse'
               }
 
-              // 4. Start Notifications
+              // 4. Start Notifications using the *actual* UUIDs found
+              const serviceUUIDToUse = foundService.uuid;
+              const notifyCharUUIDToUse = notifyCharacteristic.characteristic;
               console.info(
-                `[useBluetooth] Starting notifications for ${notifyCharUUIDUpper}...`,
+                `[useBluetooth] Starting notifications for Service ${serviceUUIDToUse} / Characteristic ${notifyCharUUIDToUse}...`,
               );
               await BleManager.startNotification(
                 deviceId,
-                target.serviceUUID,
-                target.notifyCharacteristicUUID,
+                serviceUUIDToUse, // Use actual found service UUID
+                notifyCharUUIDToUse, // Use actual found notify characteristic UUID
               );
               console.info(
-                `[useBluetooth] Notifications started for ${notifyCharUUIDUpper}.`,
+                `[useBluetooth] Notifications started for ${notifyCharUUIDToUse}.`,
               );
 
               foundConfig = {
-                serviceUUID: target.serviceUUID,
-                writeCharacteristicUUID: target.writeCharacteristicUUID,
-                notifyCharacteristicUUID: target.notifyCharacteristicUUID,
+                // Store the actual UUIDs used for communication
+                serviceUUID: serviceUUIDToUse,
+                writeCharacteristicUUID: writeCharacteristic.characteristic,
+                notifyCharacteristicUUID: notifyCharUUIDToUse,
                 writeType: writeType,
               };
               break; // Found a compatible configuration
             } else {
               console.info(
-                `[useBluetooth] Service ${target.serviceUUID} found, but required characteristics not present/found.`,
+                `[useBluetooth] Service ${foundService.uuid} found, but required characteristics (Write: ${target.writeCharacteristicUUID}, Notify: ${target.notifyCharacteristicUUID}) not found within it.`,
               );
             }
           }
