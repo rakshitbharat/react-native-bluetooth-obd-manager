@@ -11,6 +11,7 @@ import type { BleError, ChunkedResponse } from '../types';
 // TextDecoder/TextEncoder are generally globally available in modern RN environments
 // Import ecuUtils for string conversion
 import { stringToBytes } from '../utils/ecuUtils';
+import { cleanElmResponse } from '../utils/ecuUtils';
 import { log } from '../utils/logger';
 
 import {
@@ -848,15 +849,11 @@ export const useBluetooth = (): UseBluetoothResult => {
         );
         const response = await deferredPromise.promise;
 
-        // After getting response, clear buffers and wait before next command
-        if (currentCommandRef.current) {
-          currentCommandRef.current.responseBuffer = [];
-          currentCommandRef.current.responseChunks = [];
-          currentCommandRef.current = null;
+        // Clean up the response if it's a string
+        if (typeof response === 'string') {
+          const cleanedResponse = cleanElmResponse(response, command);
+          return cleanedResponse;
         }
-
-        // Add delay to ensure device is ready for next command
-        await new Promise(resolve => setTimeout(resolve, 10));
 
         return response;
       } catch (error) {
@@ -886,13 +883,7 @@ export const useBluetooth = (): UseBluetoothResult => {
         throw formattedError;
       }
     },
-    [
-      state.connectedDevice,
-      state.activeDeviceConfig,
-      state.isAwaitingResponse,
-      dispatch,
-      currentCommandRef,
-    ],
+    [state.connectedDevice, state.activeDeviceConfig, state.isAwaitingResponse, dispatch],
   );
 
   const sendCommand = useCallback(

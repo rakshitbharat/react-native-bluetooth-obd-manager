@@ -243,3 +243,30 @@ export const toHexString = (
     .toUpperCase()
     .padStart(width, '0');
 };
+
+/**
+ * Cleans up an ELM327 response by:
+ * 1. Removing echo of the command (if present)
+ * 2. Removing prompt characters ('>')
+ * 3. Trimming whitespace
+ * 4. Removing any empty lines
+ */
+export const cleanElmResponse = (response: string, command?: string): string => {
+  // Split into lines and filter out empty ones
+  const lines = response.split(/[\r\n]+/).filter(line => line.trim().length > 0);
+  
+  // Remove echo of the command if present
+  const filteredLines = lines.filter(line => {
+    // Skip any line that matches the command
+    if (command && line.toUpperCase().includes(command.toUpperCase())) {
+      return false;
+    }
+    return true;
+  });
+
+  // Remove prompt characters and trim
+  return filteredLines
+    .map(line => line.replace(/>/g, '').trim())
+    .join('\n')
+    .trim();
+};
