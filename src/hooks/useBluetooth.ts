@@ -827,6 +827,7 @@ export const useBluetooth = (): UseBluetoothResult => {
         const commandString = command + ELM327_COMMAND_TERMINATOR;
         const commandBytes = Array.from(stringToBytes(commandString));
 
+        // Send command
         if (config.writeType === 'Write') {
           await BleManager.write(
             deviceId,
@@ -842,11 +843,20 @@ export const useBluetooth = (): UseBluetoothResult => {
             commandBytes,
           );
         }
-        log.info(
-          `[useBluetooth] Command "${command}" written. Waiting for response from Provider...`,
-        );
-
+        
+        log.info(`[useBluetooth] Command "${command}" written. Waiting for response...`);
         const response = await deferredPromise.promise;
+
+        // After getting response, clear buffers and wait before next command
+        if (currentCommandRef.current) {
+          currentCommandRef.current.responseBuffer = [];
+          currentCommandRef.current.responseChunks = [];
+          currentCommandRef.current = null;
+        }
+
+        // Add delay to ensure device is ready for next command
+        await new Promise(resolve => setTimeout(resolve, 10));
+
         return response;
       } catch (error) {
         const formattedError = handleError(error);
