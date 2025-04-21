@@ -271,93 +271,26 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         '[BluetoothProvider] Received raw data:',
         JSON.stringify(dataValue),
         'ASCII:',
-        bytesToString(dataValue),
+        bytesToString(dataValue)
       );
 
+      // Only process data if we're awaiting a response and have an active command
       if (state.isAwaitingResponse && currentCommandRef.current) {
         try {
           const commandState = currentCommandRef.current;
-
-          // Log buffer state before adding new data
-          log.info(
-            '[BluetoothProvider] Current buffer before:',
-            bytesToString(commandState.responseBuffer),
-          );
-
+          
+          // Simply accumulate the data
           commandState.responseChunks.push([...dataValue]);
           commandState.responseBuffer.push(...dataValue);
 
-          // Log buffer state after adding new data
-          log.info(
-            '[BluetoothProvider] Current buffer after:',
-            bytesToString(commandState.responseBuffer),
-            'Raw:',
-            JSON.stringify(commandState.responseBuffer),
-          );
+          // Check if this chunk contains the ELM327 prompt character ('>') which signals end of response
+          if (dataValue.includes(ELM327_PROMPT_BYTE)) {
+            log.info('[BluetoothProvider] Response terminator received');
+            
+            const response = bytesToString(commandState.responseBuffer);
+            log.info('[BluetoothProvider] Complete response received:', response);
 
-          // Check for prompt anywhere in the buffer
-          const promptIndex =
-            commandState.responseBuffer.indexOf(ELM327_PROMPT_BYTE);
-          if (promptIndex !== -1) {
-            log.info('[BluetoothProvider] Found prompt at index:', promptIndex);
-
-            const responseBytes = commandState.responseBuffer.slice(
-              0,
-              promptIndex,
-            );
-            log.info(
-              '[BluetoothProvider] Response before prompt:',
-              bytesToString(responseBytes),
-              'Raw:',
-              JSON.stringify(responseBytes),
-            );
-
-            const processedChunks = processResponseChunks(
-              commandState.responseChunks,
-              commandState.responseBuffer,
-              promptIndex,
-            );
-
-            // Reset buffers
-            commandState.responseBuffer = [];
-            commandState.responseChunks = [];
-
-            if (commandState.timeoutId) {
-              clearTimeout(commandState.timeoutId);
-              commandState.timeoutId = null;
-            }
-
-            let response;
-            switch (commandState.expectedReturnType) {
-              case CommandReturnType.STRING:
-                response = bytesToString(responseBytes);
-                log.info(
-                  '[BluetoothProvider] Resolved string response:',
-                  response,
-                );
-                break;
-              case CommandReturnType.BYTES:
-                response = Uint8Array.from(responseBytes);
-                log.info(
-                  '[BluetoothProvider] Resolved bytes response length:',
-                  response.length,
-                );
-                break;
-              case CommandReturnType.CHUNKED:
-                response = {
-                  data: Uint8Array.from(responseBytes),
-                  chunks: processedChunks.map(chunk => Uint8Array.from(chunk)),
-                };
-                log.info(
-                  '[BluetoothProvider] Resolved chunked response chunks:',
-                  response.chunks.length,
-                );
-                break;
-              default:
-                response = bytesToString(responseBytes);
-            }
-
-            // Clear currentCommandRef before resolving to avoid any race conditions
+            // Let the command handler deal with processing/cleaning the response
             const promiseToResolve = commandState.promise;
             currentCommandRef.current = null;
             dispatch({ type: 'COMMAND_SUCCESS' });
@@ -366,7 +299,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         } catch (error) {
           log.error(
             '[BluetoothProvider] Error processing incoming data:',
-            error,
+            error
           );
           if (currentCommandRef.current?.promise) {
             currentCommandRef.current.promise.reject(handleError(error));
@@ -374,17 +307,9 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
           }
           dispatch({ type: 'COMMAND_FAILURE', payload: handleError(error) });
         }
-      } else {
-        // Log unexpected data
-        log.warn(
-          '[BluetoothProvider] Received data but no active command:',
-          bytesToString(dataValue),
-          'Raw:',
-          JSON.stringify(dataValue),
-        );
       }
     },
-    [state.isAwaitingResponse],
+    [state.isAwaitingResponse]
   );
 
   /**
