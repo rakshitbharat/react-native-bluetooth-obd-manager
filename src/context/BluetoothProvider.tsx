@@ -16,6 +16,8 @@ import {
   View,
   Text,
   type EmitterSubscription,
+  type TextStyle,
+  StyleSheet,
 } from 'react-native';
 import BleManager from 'react-native-ble-manager';
 import type {
@@ -30,7 +32,7 @@ import {
 } from './BluetoothContext';
 import { bluetoothReducer, initialState } from './BluetoothReducer';
 import type { PeripheralWithPrediction, DeferredPromise } from '../types';
-import { ELM327_PROMPT_BYTE, CommandReturnType } from '../constants';
+import { ELM327_COMMAND_TERMINATOR } from '../constants';
 import { bytesToString } from '../utils/ecuUtils';
 import { log } from '../utils/logger';
 
@@ -203,7 +205,6 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         isScanning: state.isScanning,
       });
 
-      // Attempt recovery by resetting relevant state
       dispatch({ type: 'SET_ERROR', payload: error });
 
       if (state.isConnecting || state.connectedDevice) {
@@ -214,41 +215,47 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         dispatch({ type: 'SCAN_STOP' });
       }
     },
-    [state.connectedDevice?.id, state.isConnecting, state.isScanning],
+    [state.connectedDevice, state.isConnecting, state.isScanning],
   );
+
+  // Color constants
+  const colors = {
+    errorBackground: '#FEE2E2',
+    errorTitle: '#991B1B',
+    errorText: '#7F1D1D',
+  } as const;
+
+  // Convert inline styles to StyleSheet with extracted colors
+  const styles = StyleSheet.create({
+    errorContainer: {
+      padding: 20,
+      backgroundColor: colors.errorBackground,
+      borderRadius: 8,
+      margin: 10,
+    },
+    errorTitle: {
+      color: colors.errorTitle,
+      fontSize: 16,
+      fontWeight: '600' as TextStyle['fontWeight'],
+      marginBottom: 8,
+    },
+    errorMessage: {
+      color: colors.errorText,
+      fontSize: 14,
+    },
+  });
 
   const fallbackUI = useMemo(
     () => (
-      <View
-        style={{
-          padding: 20,
-          backgroundColor: '#FEE2E2',
-          borderRadius: 8,
-          margin: 10,
-        }}
-      >
-        <Text
-          style={{
-            color: '#991B1B',
-            fontSize: 16,
-            fontWeight: '600',
-            marginBottom: 8,
-          }}
-        >
-          Bluetooth Connection Error
-        </Text>
-        <Text
-          style={{
-            color: '#7F1D1D',
-            fontSize: 14,
-          }}
-        >
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorTitle}>Bluetooth Connection Error</Text>
+        <Text style={styles.errorMessage}>
           There was a problem with the Bluetooth connection. The app will
           automatically try to recover.
         </Text>
       </View>
     ),
-    [],
+    [styles], // Add styles as dependency since we're using it
   );
 
   // Ensure state is never null during initialization
@@ -259,36 +266,34 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     }
   }, []);
 
-  /**
-   * Handles incoming data from BLE characteristic notifications.
-   * Processes response chunks and resolves command promises when complete.
-   *
-   * @param dataValue - Array of bytes received from the BLE device
-   */
+  // Update handleIncomingData dependencies
   const handleIncomingData = useCallback(
-    (dataValue: number[]) => {
+    (value: number[]) => {
       log.info(
         '[BluetoothProvider] Received raw data:',
-        JSON.stringify(dataValue),
+        JSON.stringify(value),
         'ASCII:',
-        bytesToString(dataValue)
+        bytesToString(value),
       );
 
       // Only process data if we're awaiting a response and have an active command
       if (state.isAwaitingResponse && currentCommandRef.current) {
         try {
           const commandState = currentCommandRef.current;
-          
+
           // Simply accumulate the data
-          commandState.responseChunks.push([...dataValue]);
-          commandState.responseBuffer.push(...dataValue);
+          commandState.responseChunks.push([...value]);
+          commandState.responseBuffer.push(...value);
 
           // Check if this chunk contains the ELM327 prompt character ('>') which signals end of response
-          if (dataValue.includes(ELM327_PROMPT_BYTE)) {
+          if (value.indexOf(ELM327_COMMAND_TERMINATOR) !== -1) {
             log.info('[BluetoothProvider] Response terminator received');
-            
+
             const response = bytesToString(commandState.responseBuffer);
-            log.info('[BluetoothProvider] Complete response received:', response);
+            log.info(
+              '[BluetoothProvider] Complete response received:',
+              response,
+            );
 
             // Let the command handler deal with processing/cleaning the response
             const promiseToResolve = commandState.promise;
@@ -299,7 +304,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         } catch (error) {
           log.error(
             '[BluetoothProvider] Error processing incoming data:',
-            error
+            error,
           );
           if (currentCommandRef.current?.promise) {
             currentCommandRef.current.promise.reject(handleError(error));
@@ -309,40 +314,8 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         }
       }
     },
-    [state.isAwaitingResponse]
-  );
-
-  /**
-   * Processes response chunks to handle partial responses and remove prompt bytes.
-   *
-   * @param chunks - Array of received data chunks
-   * @param flatBuffer - Complete response buffer
-   * @param promptIndex - Index of the prompt byte in the flat buffer
-   * @returns Processed chunks with prompt byte removed
-   */
-  const processResponseChunks = (
-    chunks: number[][],
-    flatBuffer: number[],
-    promptIndex: number,
-  ): number[][] => {
-    const processedChunks = [...chunks];
-    let runningLength = 0;
-
-    for (let i = 0; i < processedChunks.length; i++) {
-      const chunkLength = processedChunks[i].length;
-
-      if (runningLength + chunkLength > promptIndex) {
-        const promptPositionInChunk = promptIndex - runningLength;
-        processedChunks[i] = processedChunks[i].slice(0, promptPositionInChunk);
-        processedChunks.splice(i + 1);
-        break;
-      }
-
-      runningLength += chunkLength;
-    }
-
-    return processedChunks;
-  };
+    [state.isAwaitingResponse],
+  ); // Remove state.connectedDevice dependency since it's not used
 
   /**
    * Ensures consistent error handling by converting any error type to Error.

@@ -82,10 +82,10 @@ export interface BleDisconnectPeripheralEvent {
  * Each element in the array represents a distinct data packet received.
  */
 export interface ChunkedResponse {
-  /** The complete flattened byte array (excluding the prompt byte) */
-  data: Uint8Array;
-  /** The original response chunks as received from the device */
   chunks: Uint8Array[];
+  totalBytes: number;
+  command: string;
+  rawResponse?: number[][];
 }
 
 export interface CommandExecutionState {

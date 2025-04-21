@@ -89,4 +89,4 @@ export const ELM327_PROMPT_BYTE = 0x3e;
 /**
  * Carriage return character, required at the end of most ELM327 commands.
  */
-export const ELM327_COMMAND_TERMINATOR = '\r';
+export const ELM327_COMMAND_TERMINATOR = 0x3e; // '>' character as number
