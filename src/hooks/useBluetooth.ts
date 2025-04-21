@@ -9,6 +9,8 @@ import type { BleError, ChunkedResponse } from '../types';
 // Import converter if needed for specific byte manipulations, TextDecoder is often built-in now
 // import { stringToBytes } from 'convert-string'; // Example if needed
 // TextDecoder/TextEncoder are generally globally available in modern RN environments
+// Import ecuUtils for string conversion
+import { stringToBytes } from '../utils/ecuUtils';
 
 import {
   useBluetoothDispatch,
@@ -836,7 +838,7 @@ export const useBluetooth = (): UseBluetoothResult => {
       try {
         const commandString = command + ELM327_COMMAND_TERMINATOR;
         const commandBytes = Array.from(
-          new TextEncoder().encode(commandString),
+          stringToBytes(commandString),
         );
 
         if (config.writeType === 'Write') {

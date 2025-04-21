@@ -31,6 +31,7 @@ import {
 import { bluetoothReducer, initialState } from './BluetoothReducer';
 import type { PeripheralWithPrediction, DeferredPromise } from '../types';
 import { ELM327_PROMPT_BYTE, CommandReturnType } from '../constants';
+import { bytesToString } from '../utils/ecuUtils';
 
 const BleManagerModule = NativeModules.BleManager;
 const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
@@ -294,7 +295,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
             let response;
             switch (commandState.expectedReturnType) {
               case CommandReturnType.STRING:
-                response = decodeResponse(responseBytes);
+                response = bytesToString(responseBytes);
                 break;
               case CommandReturnType.BYTES:
                 response = Uint8Array.from(responseBytes);
@@ -306,7 +307,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
                 };
                 break;
               default:
-                response = decodeResponse(responseBytes);
+                response = bytesToString(responseBytes);
             }
 
             commandState.promise.resolve(response);
@@ -359,25 +360,6 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     }
 
     return processedChunks;
-  };
-
-  /**
-   * Decodes a byte array response into a string using TextDecoder.
-   * Falls back to String.fromCharCode if TextDecoder fails.
-   *
-   * @param bytes - Array of bytes to decode
-   * @returns Decoded string with whitespace trimmed
-   */
-  const decodeResponse = (bytes: number[]): string => {
-    try {
-      return new TextDecoder().decode(Uint8Array.from(bytes)).trim();
-    } catch (e) {
-      console.warn(
-        '[BluetoothProvider] TextDecoder failed, falling back to fromCharCode:',
-        e,
-      );
-      return String.fromCharCode(...bytes).trim();
-    }
   };
 
   /**
