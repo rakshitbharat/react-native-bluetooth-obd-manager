@@ -11,7 +11,7 @@ import { log } from './logger';
  * ```typescript
  * // Convert hex string to bytes
  * const bytes = hexToBytes('48 65 6C 6C 6F');
- * console.log(bytes); // Uint8Array [72, 101, 108, 108, 111]
+ * log.log(bytes); // Uint8Array [72, 101, 108, 108, 111]
  * ```
  */
 export const hexToBytes = (hex: string): Uint8Array => {
@@ -56,7 +56,7 @@ export const hexToBytes = (hex: string): Uint8Array => {
  * ```typescript
  * // Convert bytes to hex string
  * const hex = bytesToHex([72, 101, 108, 108, 111]);
- * console.log(hex); // "48656C6C6F"
+ * log.log(hex); // "48656C6C6F"
  * ```
  */
 export const bytesToHex = (bytes: Uint8Array | number[]): string => {
@@ -98,7 +98,7 @@ export const bytesToHex = (bytes: Uint8Array | number[]): string => {
  * ```typescript
  * // Convert bytes to string
  * const text = bytesToString(new Uint8Array([72, 101, 108, 108, 111]));
- * console.log(text); // "Hello"
+ * log.log(text); // "Hello"
  * ```
  */
 export const bytesToString = (
@@ -176,7 +176,7 @@ export const bytesToString = (
  * ```typescript
  * // Convert string to bytes
  * const bytes = stringToBytes("Hello");
- * console.log(bytes); // Uint8Array [72, 101, 108, 108, 111]
+ * log.log(bytes); // Uint8Array [72, 101, 108, 108, 111]
  * ```
  */
 export const stringToBytes = (str: string | null | undefined): Uint8Array => {
@@ -224,7 +224,7 @@ export const stringToBytes = (str: string | null | undefined): Uint8Array => {
  * ```typescript
  * // Convert number to padded hex
  * const hex = toHexString(26, 4);
- * console.log(hex); // "001A"
+ * log.log(hex); // "001A"
  * ```
  */
 export const toHexString = (
