@@ -401,14 +401,26 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
       });
   }, []);
 
-  /**
-   * Sets up BLE event listeners for managing device state and communication.
-   * Handles state changes, device discovery, disconnections, and data notifications.
-   * Re-runs when the connected device ID changes to ensure proper disconnect handling.
-   */
+  // Data Notification Listener - Independent setup/cleanup
+  useEffect(() => {
+    console.info('[BluetoothProvider] Setting up BLE data notification listener...');
+    const dataListener = bleManagerEmitter.addListener(
+      'BleManagerDidUpdateValueForCharacteristic',
+      (data: BleManagerDidUpdateValueForCharacteristicEvent) => {
+        handleIncomingData(data.value);
+      },
+    );
+
+    return () => {
+      console.info('[BluetoothProvider] Removing BLE data notification listener...');
+      dataListener.remove();
+    };
+  }, []); // Empty dependency array - only run on mount/unmount
+
+  // Other BLE State Listeners
   useEffect(() => {
     const listeners: EmitterSubscription[] = [];
-    console.info('[BluetoothProvider] Setting up BLE listeners...');
+    console.info('[BluetoothProvider] Setting up BLE state listeners...');
 
     // Bluetooth State Change Listener
     listeners.push(
@@ -490,24 +502,14 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
       ),
     );
 
-    // Data Notification Listener
-    listeners.push(
-      bleManagerEmitter.addListener(
-        'BleManagerDidUpdateValueForCharacteristic',
-        (data: BleManagerDidUpdateValueForCharacteristicEvent) => {
-          handleIncomingData(data.value);
-        },
-      ),
-    );
-
     listenersRef.current = listeners;
 
     return () => {
-      console.info('[BluetoothProvider] Removing BLE listeners...');
+      console.info('[BluetoothProvider] Removing BLE state listeners...');
       listenersRef.current.forEach(listener => listener.remove());
       listenersRef.current = [];
     };
-  }, [state.connectedDevice?.id, handleIncomingData]);
+  }, [state.connectedDevice?.id]); // Only re-run if connected device ID changes
 
   // Memoized provider value to prevent unnecessary re-renders
   const stateValue = useMemo(() => state, [state]);
