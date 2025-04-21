@@ -82,7 +82,8 @@
   "dependencies": {
     "react-native-beautiful-logs": "^1.0.8",
     "react-native-ble-manager": "^11.6.0",
-    "react-native-blob-util": "^0.21.2"
+    "react-native-blob-util": "^0.21.2",
+    "text-encoding": "^0.7.0"
   },
   "devDependencies": {
     "@babel/eslint-parser": "^7.22.15",
