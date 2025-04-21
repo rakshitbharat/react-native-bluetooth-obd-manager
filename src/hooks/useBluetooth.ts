@@ -1011,56 +1011,9 @@ export const useBluetooth = (): UseBluetoothResult => {
   }, [currentCommandRef]);
 
   // --- Effect to process incoming data for sendCommand ---
-  // This is where the logic connecting DATA_RECEIVED actions to the commandPromise lives.
-  // This *could* live here, but is often better placed in the Provider to directly
-  // access the commandPromiseRef without prop drilling or complex context.
-  // For simplicity *initially*, we might put it here, but consider moving it.
-  useEffect(() => {
-    if (state.isAwaitingResponse && currentCommandRef.current) {
-      // Check the buffer for the prompt character '>' (0x3E)
-      const promptIndex =
-        currentCommandRef.current.responseBuffer.indexOf(ELM327_PROMPT_BYTE);
-      if (promptIndex !== -1) {
-        console.info('[useBluetooth] Prompt ">" detected in buffer.');
-
-        // Extract the response bytes (excluding the prompt)
-        const responseBytes = currentCommandRef.current.responseBuffer.slice(
-          0,
-          promptIndex,
-        );
-        currentCommandRef.current.responseBuffer = []; // Clear buffer
-
-        // Clear the timeout!
-        if (currentCommandRef.current.timeoutId)
-          clearTimeout(currentCommandRef.current.timeoutId);
-        currentCommandRef.current.timeoutId = null;
-
-        // Decode response bytes to string (assuming ASCII/UTF-8 typical for ELM327)
-        // Use TextDecoder for better performance and encoding support if available
-        let responseString = '';
-        try {
-          responseString = new TextDecoder()
-            .decode(Uint8Array.from(responseBytes))
-            .trim();
-          // console.log("Decoded response:", responseString);
-        } catch (e) {
-          console.warn(
-            '[useBluetooth] TextDecoder failed, falling back to fromCharCode:',
-            e,
-          );
-          // Fallback for environments without TextDecoder or for simple ASCII
-          responseString = String.fromCharCode(...responseBytes).trim();
-        }
-
-        // Resolve the command promise with the string
-        currentCommandRef.current?.promise.resolve(responseString);
-        // currentCommandRef.current = null; // Cleared in sendCommand finally block
-        // Dispatch success action to reset isAwaitingResponse flag in state
-        // (This happens in sendCommand after await resolves)
-        // dispatch({ type: 'COMMAND_SUCCESS' }); // NO! Done in sendCommand
-      }
-    }
-  }, [state.isAwaitingResponse, currentCommandRef]);
+  // NOTE: The useEffect hook previously here for handling incoming data and decoding
+  // has been removed. This logic is now centralized within the BluetoothProvider's
+  // handleIncomingData function, which directly resolves the command promise.
 
   // Effect to append incoming data to buffer - NEEDS REVISION
   // This is problematic here, depends on how DATA_RECEIVED updates state or if
