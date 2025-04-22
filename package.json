@@ -35,7 +35,8 @@
     "format:src": "prettier --write \"src/**/*.{ts,tsx}\"",
     "prettier:check": "prettier --check \"src/**/*.{ts,tsx}\"",
     "test:coverage": "jest --coverage",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "validate": "yarn lint && yarn type-check && yarn test"
   },
   "keywords": [
     "react-native",
@@ -97,7 +98,6 @@
     "@typescript-eslint/eslint-plugin": "*",
     "@typescript-eslint/parser": "*",
     "babel-jest": "*",
-    "commitlint": "*",
     "del-cli": "*",
     "eslint": "^9.25.0",
     "eslint-config-prettier": "*",
@@ -106,11 +106,9 @@
     "eslint-plugin-react": "*",
     "eslint-plugin-react-hooks": "*",
     "eslint-plugin-react-native": "^5.0.0",
-    "husky": "*",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "jest-react-native": "^18.0.0",
-    "lint-staged": "*",
     "metro-react-native-babel-preset": "^0.77.0",
     "pod-install": "*",
     "prettier": "^3.5.3",
@@ -131,23 +129,6 @@
     "yarn": ">=1.22"
   },
   "packageManager": "yarn@1.22.19",
-  "release-it": {
-    "git": {
-      "commitMessage": "chore: release ${version}",
-      "tagName": "v${version}"
-    },
-    "npm": {
-      "publish": true
-    },
-    "github": {
-      "release": true
-    },
-    "plugins": {
-      "@release-it/conventional-changelog": {
-        "preset": "angular"
-      }
-    }
-  },
   "eslintConfig": {
     "root": true,
     "extends": [

@@ -27,36 +27,15 @@ jobs:
         with:
           node-version: '20'
           cache: 'yarn'
-      - run: yarn install --frozen-lockfile
-      - run: yarn validate
-
-  test:
-    name: Test
-    needs: validate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+      - name: Validate
+        run: yarn validate
+      - name: Build package
+        run: yarn build
+      - name: Store release artifacts
+        uses: actions/upload-artifact@v4
         with:
-          node-version: '20'
-          cache: 'yarn'
-      - run: yarn install --frozen-lockfile
-      - run: yarn test
-
-  build:
-    name: Build Package
-    needs: [validate, test]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'yarn'
-      - run: yarn install --frozen-lockfile
-      - run: yarn build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts
+          name: release-package
           path: lib/
           retention-days: 7
