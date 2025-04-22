@@ -6,12 +6,7 @@ import BleManager, { type Peripheral } from 'react-native-ble-manager';
 import * as Permissions from 'react-native-permissions';
 import type { PermissionStatus } from 'react-native-permissions';
 import type { BleError, ChunkedResponse } from '../types';
-// Import converter if needed for specific byte manipulations, TextDecoder is often built-in now
-// import { stringToBytes } from 'convert-string'; // Example if needed
-// TextDecoder/TextEncoder are generally globally available in modern RN environments
-// Import ecuUtils for string conversion
-import { stringToBytes } from '../utils/ecuUtils';
-import { cleanElmResponse } from '../utils/ecuUtils';
+import { stringToBytes, bytesToString } from '../utils/ecuUtils';
 import { log } from '../utils/logger';
 
 import {
@@ -764,7 +759,7 @@ export const useBluetooth = (): UseBluetoothResult => {
   const executeCommand = useCallback(
     async (
       command: string,
-      returnType: string,
+      returnType: CommandReturnType,
       options?: { timeout?: number },
     ): Promise<string | Uint8Array | ChunkedResponse> => {
       if (!state.connectedDevice || !state.activeDeviceConfig) {
@@ -773,10 +768,17 @@ export const useBluetooth = (): UseBluetoothResult => {
       if (state.isAwaitingResponse) {
         throw new Error('Another command is already in progress.');
       }
+
+      // Clear existing command with proper cleanup
       if (currentCommandRef.current) {
         log.warn('[useBluetooth] Stale command ref found - clearing.');
-        if (currentCommandRef.current.timeoutId)
+        if (currentCommandRef.current.timeoutId) {
           clearTimeout(currentCommandRef.current.timeoutId);
+        }
+        dispatch({
+          type: 'COMMAND_FAILURE',
+          payload: new Error('Command cancelled due to new command starting.'),
+        });
         currentCommandRef.current.promise.reject(
           new Error('Command cancelled due to new command starting.'),
         );
@@ -788,26 +790,22 @@ export const useBluetooth = (): UseBluetoothResult => {
       const commandTimeoutDuration =
         options?.timeout ?? DEFAULT_COMMAND_TIMEOUT;
 
-      log.info(
-        `[useBluetooth] Sending command: "${command}" (Expect: ${returnType}, Timeout: ${commandTimeoutDuration}ms)`,
-      );
-
+      // Create promise with proper types
       const deferredPromise = createDeferredPromise<
         string | Uint8Array | ChunkedResponse
       >();
-      let timeoutId: NodeJS.Timeout | null = null;
 
       currentCommandRef.current = {
         promise: deferredPromise,
         timeoutId: null,
         responseBuffer: [],
-        responseChunks: [], // Initialize empty response chunks array
-        expectedReturnType: returnType as 'string' | 'bytes' | 'chunked',
+        responseChunks: [],
+        expectedReturnType: returnType,
       };
 
       dispatch({ type: 'SEND_COMMAND_START' });
 
-      timeoutId = setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         if (currentCommandRef.current?.promise === deferredPromise) {
           const error = new Error(
             `Command "${command}" timed out after ${commandTimeoutDuration}ms.`,
@@ -847,43 +845,70 @@ export const useBluetooth = (): UseBluetoothResult => {
         log.info(
           `[useBluetooth] Command "${command}" written. Waiting for response...`,
         );
+
         const response = await deferredPromise.promise;
 
-        // Clean up the response if it's a string
-        if (typeof response === 'string') {
-          const cleanedResponse = cleanElmResponse(response, command);
-          return cleanedResponse;
-        }
+        // Process response based on expected return type
+        switch (returnType) {
+          case CommandReturnType.STRING:
+            if (typeof response === 'string') {
+              const decodedResponse = bytesToString(response);
+              log.debug(
+                `[useBluetooth] Command "${command}" response processed:`,
+                `Original: "${response}"`,
+                `Decoded: "${decodedResponse}"`,
+              );
+              return decodedResponse;
+            }
+            throw new Error(
+              'Expected string response but received different type',
+            );
 
-        return response;
+          case CommandReturnType.BYTES:
+            if (response instanceof Uint8Array) {
+              return response;
+            }
+            if (typeof response === 'string') {
+              return stringToBytes(response);
+            }
+            throw new Error('Cannot convert response to bytes');
+
+          case CommandReturnType.CHUNKED:
+            if (typeof response === 'object' && 'chunks' in response) {
+              return response as ChunkedResponse;
+            }
+            throw new Error(
+              'Expected chunked response but received different type',
+            );
+
+          default:
+            throw new Error(`Unsupported return type: ${returnType}`);
+        }
       } catch (error) {
         const formattedError = handleError(error);
         log.error(
-          `[useBluetooth] Error during command execution or processing "${command}":`,
+          `[useBluetooth] Command "${command}" failed:`,
           formattedError,
         );
-        if (
-          currentCommandRef.current?.promise === deferredPromise &&
-          currentCommandRef.current.timeoutId
-        ) {
-          clearTimeout(currentCommandRef.current.timeoutId);
-        }
-        if (
-          state.isAwaitingResponse &&
-          currentCommandRef.current?.promise === deferredPromise
-        ) {
-          dispatch({
-            type: 'COMMAND_FAILURE',
-            payload: formattedError,
-          });
-        }
+
+        // Cleanup
         if (currentCommandRef.current?.promise === deferredPromise) {
+          if (currentCommandRef.current.timeoutId) {
+            clearTimeout(currentCommandRef.current.timeoutId);
+          }
           currentCommandRef.current = null;
+          dispatch({ type: 'COMMAND_FAILURE', payload: formattedError });
         }
+
         throw formattedError;
       }
     },
-    [state.connectedDevice, state.activeDeviceConfig, state.isAwaitingResponse, dispatch],
+    [
+      state.connectedDevice,
+      state.activeDeviceConfig,
+      state.isAwaitingResponse,
+      dispatch,
+    ],
   );
 
   const sendCommand = useCallback(

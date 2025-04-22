@@ -1,6 +1,6 @@
 import { log as LogLib, initSessionLog } from 'react-native-beautiful-logs';
 
-const ACTIVE_LOG = false;
+const ACTIVE_LOG = true;
 
 // Initialize logging session
 initSessionLog().catch(error => {
