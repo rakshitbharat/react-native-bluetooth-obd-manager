@@ -16,6 +16,8 @@ import {
   View,
   Text,
   type EmitterSubscription,
+  type TextStyle,
+  StyleSheet,
 } from 'react-native';
 import BleManager from 'react-native-ble-manager';
 import type {
@@ -30,8 +32,9 @@ import {
 } from './BluetoothContext';
 import { bluetoothReducer, initialState } from './BluetoothReducer';
 import type { PeripheralWithPrediction, DeferredPromise } from '../types';
-import { ELM327_PROMPT_BYTE, CommandReturnType } from '../constants';
+import { ELM327_COMMAND_TERMINATOR } from '../constants';
 import { bytesToString } from '../utils/ecuUtils';
+import { log } from '../utils/logger';
 
 const BleManagerModule = NativeModules.BleManager;
 const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
@@ -120,7 +123,7 @@ class BluetoothErrorBoundary extends Component<
     maxRetries: 3,
     fallback: null,
     onError: (error: Error) => {
-      console.error('[BluetoothErrorBoundary]', error);
+      log.error('[BluetoothErrorBoundary]', error);
     },
   };
 
@@ -194,7 +197,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
 
   const handleBoundaryError = useCallback(
     (error: Error, errorInfo: ErrorInfo) => {
-      console.error('[BluetoothProvider] Error caught by boundary:', {
+      log.error('[BluetoothProvider] Error caught by boundary:', {
         error,
         errorInfo,
         deviceId: state.connectedDevice?.id,
@@ -202,7 +205,6 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         isScanning: state.isScanning,
       });
 
-      // Attempt recovery by resetting relevant state
       dispatch({ type: 'SET_ERROR', payload: error });
 
       if (state.isConnecting || state.connectedDevice) {
@@ -213,41 +215,47 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         dispatch({ type: 'SCAN_STOP' });
       }
     },
-    [state.connectedDevice?.id, state.isConnecting, state.isScanning],
+    [state.connectedDevice, state.isConnecting, state.isScanning],
   );
+
+  // Color constants
+  const colors = {
+    errorBackground: '#FEE2E2',
+    errorTitle: '#991B1B',
+    errorText: '#7F1D1D',
+  } as const;
+
+  // Convert inline styles to StyleSheet with extracted colors
+  const styles = StyleSheet.create({
+    errorContainer: {
+      padding: 20,
+      backgroundColor: colors.errorBackground,
+      borderRadius: 8,
+      margin: 10,
+    },
+    errorTitle: {
+      color: colors.errorTitle,
+      fontSize: 16,
+      fontWeight: '600' as TextStyle['fontWeight'],
+      marginBottom: 8,
+    },
+    errorMessage: {
+      color: colors.errorText,
+      fontSize: 14,
+    },
+  });
 
   const fallbackUI = useMemo(
     () => (
-      <View
-        style={{
-          padding: 20,
-          backgroundColor: '#FEE2E2',
-          borderRadius: 8,
-          margin: 10,
-        }}
-      >
-        <Text
-          style={{
-            color: '#991B1B',
-            fontSize: 16,
-            fontWeight: '600',
-            marginBottom: 8,
-          }}
-        >
-          Bluetooth Connection Error
-        </Text>
-        <Text
-          style={{
-            color: '#7F1D1D',
-            fontSize: 14,
-          }}
-        >
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorTitle}>Bluetooth Connection Error</Text>
+        <Text style={styles.errorMessage}>
           There was a problem with the Bluetooth connection. The app will
           automatically try to recover.
         </Text>
       </View>
     ),
-    [],
+    [styles], // Add styles as dependency since we're using it
   );
 
   // Ensure state is never null during initialization
@@ -258,64 +266,43 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     }
   }, []);
 
-  /**
-   * Handles incoming data from BLE characteristic notifications.
-   * Processes response chunks and resolves command promises when complete.
-   *
-   * @param dataValue - Array of bytes received from the BLE device
-   */
+  // Update handleIncomingData dependencies
   const handleIncomingData = useCallback(
-    (dataValue: number[]) => {
+    (value: number[]) => {
+      log.info(
+        '[BluetoothProvider] Received raw data:',
+        JSON.stringify(value),
+        'ASCII:',
+        bytesToString(value),
+      );
+
+      // Only process data if we're awaiting a response and have an active command
       if (state.isAwaitingResponse && currentCommandRef.current) {
         try {
           const commandState = currentCommandRef.current;
-          commandState.responseChunks.push([...dataValue]);
-          commandState.responseBuffer.push(...dataValue);
 
-          const promptIndex =
-            commandState.responseBuffer.indexOf(ELM327_PROMPT_BYTE);
-          if (promptIndex !== -1) {
-            const responseBytes = commandState.responseBuffer.slice(
-              0,
-              promptIndex,
+          // Simply accumulate the data
+          commandState.responseChunks.push([...value]);
+          commandState.responseBuffer.push(...value);
+
+          // Check if this chunk contains the ELM327 prompt character ('>') which signals end of response
+          if (value.indexOf(ELM327_COMMAND_TERMINATOR) !== -1) {
+            log.info('[BluetoothProvider] Response terminator received');
+
+            const response = bytesToString(commandState.responseBuffer);
+            log.info(
+              '[BluetoothProvider] Complete response received:',
+              response,
             );
-            const processedChunks = processResponseChunks(
-              commandState.responseChunks,
-              commandState.responseBuffer,
-              promptIndex,
-            );
 
-            commandState.responseBuffer = [];
-            commandState.responseChunks = [];
-
-            if (commandState.timeoutId) {
-              clearTimeout(commandState.timeoutId);
-            }
-
-            let response;
-            switch (commandState.expectedReturnType) {
-              case CommandReturnType.STRING:
-                response = bytesToString(responseBytes);
-                break;
-              case CommandReturnType.BYTES:
-                response = Uint8Array.from(responseBytes);
-                break;
-              case CommandReturnType.CHUNKED:
-                response = {
-                  data: Uint8Array.from(responseBytes),
-                  chunks: processedChunks.map(chunk => Uint8Array.from(chunk)),
-                };
-                break;
-              default:
-                response = bytesToString(responseBytes);
-            }
-
-            commandState.promise.resolve(response);
+            // Let the command handler deal with processing/cleaning the response
+            const promiseToResolve = commandState.promise;
             currentCommandRef.current = null;
             dispatch({ type: 'COMMAND_SUCCESS' });
+            promiseToResolve.resolve(response);
           }
         } catch (error) {
-          console.error(
+          log.error(
             '[BluetoothProvider] Error processing incoming data:',
             error,
           );
@@ -328,39 +315,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
       }
     },
     [state.isAwaitingResponse],
-  );
-
-  /**
-   * Processes response chunks to handle partial responses and remove prompt bytes.
-   *
-   * @param chunks - Array of received data chunks
-   * @param flatBuffer - Complete response buffer
-   * @param promptIndex - Index of the prompt byte in the flat buffer
-   * @returns Processed chunks with prompt byte removed
-   */
-  const processResponseChunks = (
-    chunks: number[][],
-    flatBuffer: number[],
-    promptIndex: number,
-  ): number[][] => {
-    const processedChunks = [...chunks];
-    let runningLength = 0;
-
-    for (let i = 0; i < processedChunks.length; i++) {
-      const chunkLength = processedChunks[i].length;
-
-      if (runningLength + chunkLength > promptIndex) {
-        const promptPositionInChunk = promptIndex - runningLength;
-        processedChunks[i] = processedChunks[i].slice(0, promptPositionInChunk);
-        processedChunks.splice(i + 1);
-        break;
-      }
-
-      runningLength += chunkLength;
-    }
-
-    return processedChunks;
-  };
+  ); // Remove state.connectedDevice dependency since it's not used
 
   /**
    * Ensures consistent error handling by converting any error type to Error.
@@ -383,16 +338,16 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
    * This effect runs once when the component mounts.
    */
   useEffect(() => {
-    console.info('[BluetoothProvider] Initializing BleManager...');
+    log.info('[BluetoothProvider] Initializing BleManager...');
 
     BleManager.start({ showAlert: false })
       .then(() => {
-        console.info('[BluetoothProvider] BleManager started successfully.');
+        log.info('[BluetoothProvider] BleManager started successfully.');
         dispatch({ type: 'SET_INITIALIZING', payload: false });
         BleManager.checkState();
       })
       .catch((error: Error) => {
-        console.error('[BluetoothProvider] BleManager failed to start:', error);
+        log.error('[BluetoothProvider] BleManager failed to start:', error);
         dispatch({ type: 'SET_INITIALIZING', payload: false });
         dispatch({
           type: 'SET_ERROR',
@@ -401,39 +356,50 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
       });
   }, []);
 
-  // Data Notification Listener - Independent setup/cleanup
+  // Data Notification Listener - Re-register when handler changes
   useEffect(() => {
-    console.info('[BluetoothProvider] Setting up BLE data notification listener...');
+    log.info(
+      '[BluetoothProvider] Setting up BLE data notification listener...',
+    );
     const dataListener = bleManagerEmitter.addListener(
       'BleManagerDidUpdateValueForCharacteristic',
       (data: BleManagerDidUpdateValueForCharacteristicEvent) => {
+        log.info(
+          `[BluetoothProvider] Received data from characteristic: ${data.characteristic}`,
+        );
+        // log.log(JSON.stringify(data.value)); // Already logged in handleIncomingData
+
+        // Directly call the handleIncomingData passed to this effect instance
         handleIncomingData(data.value);
       },
     );
 
+    // Cleanup function removes the specific listener added in this effect run
     return () => {
-      console.info('[BluetoothProvider] Removing BLE data notification listener...');
+      log.info(
+        '[BluetoothProvider] Removing BLE data notification listener...',
+      );
       dataListener.remove();
     };
-  }, []); // Empty dependency array - only run on mount/unmount
+  }, [handleIncomingData]); // Add handleIncomingData as a dependency
 
   // Other BLE State Listeners
   useEffect(() => {
     const listeners: EmitterSubscription[] = [];
-    console.info('[BluetoothProvider] Setting up BLE state listeners...');
+    log.info('[BluetoothProvider] Setting up BLE state listeners...');
 
     // Bluetooth State Change Listener
     listeners.push(
       bleManagerEmitter.addListener(
         'BleManagerDidUpdateState',
         (args: { state: BleManagerState }) => {
-          console.info(
+          log.info(
             `[BluetoothProvider] BleManagerDidUpdateState: ${args.state}`,
           );
           const isBtOn = args.state === 'on';
           dispatch({ type: 'SET_BLUETOOTH_STATE', payload: isBtOn });
           if (!isBtOn) {
-            console.warn('[BluetoothProvider] Bluetooth is OFF.');
+            log.warn('[BluetoothProvider] Bluetooth is OFF.');
           }
         },
       ),
@@ -469,7 +435,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     // Scan Completion Listener
     listeners.push(
       bleManagerEmitter.addListener('BleManagerStopScan', () => {
-        console.info('[BluetoothProvider] BleManagerStopScan received.');
+        log.info('[BluetoothProvider] BleManagerStopScan received.');
         dispatch({ type: 'SCAN_STOP' });
       }),
     );
@@ -479,12 +445,12 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
       bleManagerEmitter.addListener(
         'BleManagerDisconnectPeripheral',
         (data: { peripheral: string }) => {
-          console.warn(
+          log.warn(
             `[BluetoothProvider] BleManagerDisconnectPeripheral: ${data.peripheral}`,
           );
           if (state.connectedDevice?.id === data.peripheral) {
             if (currentCommandRef.current) {
-              console.error(
+              log.error(
                 '[BluetoothProvider] Rejecting command due to disconnect.',
               );
               currentCommandRef.current.promise.reject(
@@ -505,7 +471,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     listenersRef.current = listeners;
 
     return () => {
-      console.info('[BluetoothProvider] Removing BLE state listeners...');
+      log.info('[BluetoothProvider] Removing BLE state listeners...');
       listenersRef.current.forEach(listener => listener.remove());
       listenersRef.current = [];
     };

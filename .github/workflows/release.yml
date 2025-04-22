@@ -1,52 +1,41 @@
-name: Release
+name: Manual Release Validation
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.22)'
+        required: true
+        type: string
+      confirm:
+        description: 'Confirm manual release validation (type "yes")'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
 
 jobs:
-  release:
-    name: Create Release
+  validate:
+    name: Validate Release
+    if: github.event.inputs.confirm == 'yes'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          registry-url: 'https://registry.npmjs.org'
+          node-version: '20'
           cache: 'yarn'
-      
       - name: Install dependencies
         run: yarn install --frozen-lockfile
-      
-      - name: Run tests
-        run: yarn test
-      
-      - name: Build
+      - name: Validate
+        run: yarn validate
+      - name: Build package
         run: yarn build
-      
-      - name: Generate changelog
-        id: changelog
-        uses: metcalfc/changelog-generator@v4.1.0
+      - name: Store release artifacts
+        uses: actions/upload-artifact@v4
         with:
-          myToken: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          body: ${{ steps.changelog.outputs.changelog }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Publish to NPM
-        run: yarn publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          name: release-package
+          path: lib/
+          retention-days: 7

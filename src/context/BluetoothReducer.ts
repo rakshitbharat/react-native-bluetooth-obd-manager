@@ -1,6 +1,7 @@
 // src/context/BluetoothReducer.ts
 
 import type { BluetoothState, BluetoothAction } from '../types';
+import { log } from '../utils/logger';
 
 /**
  * The initial state for the Bluetooth context.
@@ -235,8 +236,8 @@ export function bluetoothReducer(
 
     // --- Streaming Actions ---
     case 'SET_STREAMING_STATUS': {
-      // Use console.info instead of console.log
-      console.info(`[Reducer] Setting isStreaming=${action.payload}`);
+      // Use log.info instead of log.log
+      log.info(`[Reducer] Setting isStreaming=${action.payload}`);
       newState = {
         ...state,
         isStreaming: action.payload,
@@ -254,7 +255,7 @@ export function bluetoothReducer(
       break;
 
     case 'STREAMING_INACTIVITY_TIMEOUT':
-      console.warn('[Reducer] Streaming inactivity timeout detected.');
+      log.warn('[Reducer] Streaming inactivity timeout detected.');
       newState = {
         ...state,
         isStreaming: false,
@@ -265,7 +266,7 @@ export function bluetoothReducer(
 
     default: {
       const unknownAction = action as { type: string };
-      console.warn(
+      log.warn(
         `[BluetoothReducer] Unhandled action type: ${unknownAction.type}`,
       );
       newState = state;

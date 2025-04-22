@@ -6,11 +6,8 @@ import BleManager, { type Peripheral } from 'react-native-ble-manager';
 import * as Permissions from 'react-native-permissions';
 import type { PermissionStatus } from 'react-native-permissions';
 import type { BleError, ChunkedResponse } from '../types';
-// Import converter if needed for specific byte manipulations, TextDecoder is often built-in now
-// import { stringToBytes } from 'convert-string'; // Example if needed
-// TextDecoder/TextEncoder are generally globally available in modern RN environments
-// Import ecuUtils for string conversion
-import { stringToBytes } from '../utils/ecuUtils';
+import { stringToBytes, bytesToString } from '../utils/ecuUtils';
+import { log } from '../utils/logger';
 
 import {
   useBluetoothDispatch,
@@ -21,7 +18,6 @@ import {
   KNOWN_ELM327_TARGETS,
   DEFAULT_COMMAND_TIMEOUT,
   ELM327_COMMAND_TERMINATOR,
-  ELM327_PROMPT_BYTE,
   CommandReturnType,
 } from '../constants';
 import type {
@@ -120,7 +116,7 @@ const handleStateError = (error: BleError | Error | null): Error => {
  *     await scanDevices(5000); // Scan for 5 seconds
  *     // Devices will be in discoveredDevices array
  *   } catch (error) {
- *     console.error('Scan failed:', error);
+ *     log.error('Scan failed:', error);
  *   }
  * };
  * ```
@@ -147,7 +143,7 @@ export const useBluetooth = (): UseBluetoothResult => {
    * @returns {Promise<boolean>} True if all required permissions are granted, false otherwise
    */
   const checkPermissions = useCallback(async (): Promise<boolean> => {
-    console.info('[useBluetooth] Checking permissions...');
+    log.info('[useBluetooth] Checking permissions...');
     let requiredPermissions: Permissions.Permission[] = [];
     if (Platform.OS === 'android') {
       if (Platform.Version >= 31) {
@@ -171,7 +167,7 @@ export const useBluetooth = (): UseBluetoothResult => {
     }
 
     if (requiredPermissions.length === 0) {
-      console.info(
+      log.info(
         '[useBluetooth] No specific permissions require checking on this platform/OS version.',
       );
       dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: true }); // Assume true if none needed
@@ -183,7 +179,7 @@ export const useBluetooth = (): UseBluetoothResult => {
       const allGranted = requiredPermissions.every(
         permission => statuses[permission] === Permissions.RESULTS.GRANTED,
       );
-      console.info(
+      log.info(
         `[useBluetooth] Permission check result: ${allGranted}`,
         statuses,
       );
@@ -191,7 +187,7 @@ export const useBluetooth = (): UseBluetoothResult => {
       return allGranted;
     } catch (error) {
       const formattedError = handleError(error);
-      console.error('[useBluetooth] Permission check failed:', formattedError);
+      log.error('[useBluetooth] Permission check failed:', formattedError);
       dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: false });
       dispatch({ type: 'SET_ERROR', payload: formattedError });
       return false;
@@ -209,7 +205,7 @@ export const useBluetooth = (): UseBluetoothResult => {
    */
   const requestBluetoothPermissions =
     useCallback(async (): Promise<boolean> => {
-      console.info('[useBluetooth] Requesting permissions...');
+      log.info('[useBluetooth] Requesting permissions...');
       let permissionsToRequest: Permissions.Permission[] = [];
       let iosBlePermissionNeeded = false;
 
@@ -235,7 +231,7 @@ export const useBluetooth = (): UseBluetoothResult => {
       }
 
       if (permissionsToRequest.length === 0 && !iosBlePermissionNeeded) {
-        console.info(
+        log.info(
           '[useBluetooth] No specific permissions require requesting on this platform.',
         );
         dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: true });
@@ -254,7 +250,7 @@ export const useBluetooth = (): UseBluetoothResult => {
           allGranted = permissionsToRequest.every(
             permission => statuses[permission] === Permissions.RESULTS.GRANTED,
           );
-          console.info(
+          log.info(
             '[useBluetooth] Standard permission request results:',
             statuses,
           );
@@ -263,7 +259,7 @@ export const useBluetooth = (): UseBluetoothResult => {
         // Request iOS Bluetooth separately if needed
         let iosBluetoothGranted = true;
         if (Platform.OS === 'ios' && iosBlePermissionNeeded) {
-          console.info('[useBluetooth] Requesting iOS Bluetooth permission...');
+          log.info('[useBluetooth] Requesting iOS Bluetooth permission...');
           // Use BLUETOOTH for iOS permission
           const blePermission = Permissions.PERMISSIONS.IOS.BLUETOOTH;
           const bleStatus = await Permissions.request(blePermission);
@@ -271,28 +267,24 @@ export const useBluetooth = (): UseBluetoothResult => {
           iosBluetoothGranted =
             bleStatus === Permissions.RESULTS.GRANTED ||
             bleStatus === Permissions.RESULTS.UNAVAILABLE;
-          console.info(
-            `[useBluetooth] iOS Bluetooth request result: ${bleStatus}`,
-          );
+          log.info(`[useBluetooth] iOS Bluetooth request result: ${bleStatus}`);
         }
 
         const finalGranted = allGranted && iosBluetoothGranted;
 
-        console.info(
+        log.info(
           `[useBluetooth] Overall permission request result: ${finalGranted}`,
           finalStatuses,
         );
         dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: finalGranted });
 
         if (!finalGranted) {
-          console.warn(
-            '[useBluetooth] Not all required permissions were granted.',
-          );
+          log.warn('[useBluetooth] Not all required permissions were granted.');
           const blocked = Object.values(finalStatuses).some(
             status => status === Permissions.RESULTS.BLOCKED,
           );
           if (blocked) {
-            console.error(
+            log.error(
               '[useBluetooth] One or more permissions are blocked. User must enable them in Settings.',
             );
           }
@@ -301,10 +293,7 @@ export const useBluetooth = (): UseBluetoothResult => {
         return finalGranted;
       } catch (error) {
         const formattedError = handleError(error);
-        console.error(
-          '[useBluetooth] Permission request failed:',
-          formattedError,
-        );
+        log.error('[useBluetooth] Permission request failed:', formattedError);
         dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: false });
         dispatch({ type: 'SET_ERROR', payload: formattedError });
         return false;
@@ -322,25 +311,25 @@ export const useBluetooth = (): UseBluetoothResult => {
    */
   const promptEnableBluetooth = useCallback(async (): Promise<void> => {
     if (state.isBluetoothOn) {
-      console.info('[useBluetooth] Bluetooth is already enabled.');
+      log.info('[useBluetooth] Bluetooth is already enabled.');
       return; // No need to prompt if already on
     }
 
     if (Platform.OS === 'android') {
       try {
-        console.info(
+        log.info(
           '[useBluetooth] Requesting user to enable Bluetooth via native prompt...',
         );
         // This typically shows a system dialog on Android
         await BleManager.enableBluetooth();
-        console.info(
+        log.info(
           '[useBluetooth] Bluetooth enable request prompt shown (or Bluetooth enabled).',
         );
         // The actual state change (isBluetoothOn = true) will be triggered
         // by the BleManagerDidUpdateState listener if the user accepts.
       } catch (error) {
         const formattedError = handleError(error);
-        console.error(
+        log.error(
           '[useBluetooth] Failed to request Bluetooth enable (e.g., user denied):',
           formattedError,
         );
@@ -350,7 +339,7 @@ export const useBluetooth = (): UseBluetoothResult => {
       }
     } else if (Platform.OS === 'ios') {
       // On iOS, there's no programmatic way to trigger the enable prompt.
-      console.warn(
+      log.warn(
         '[useBluetooth] promptEnableBluetooth() has no effect on iOS. Guide user to Settings/Control Center.',
       );
       return Promise.resolve();
@@ -378,16 +367,14 @@ export const useBluetooth = (): UseBluetoothResult => {
         );
       }
       if (state.isScanning) {
-        console.warn('[useBluetooth] Scan already in progress.');
+        log.warn('[useBluetooth] Scan already in progress.');
         // Option 1: Throw error
         // throw new Error('Scan already in progress.');
         // Option 2: Return existing promise (if available) or just return
         return scanPromiseRef.current?.promise ?? Promise.resolve();
       }
 
-      console.info(
-        `[useBluetooth] Starting BLE scan for ${scanDurationMs}ms...`,
-      );
+      log.info(`[useBluetooth] Starting BLE scan for ${scanDurationMs}ms...`);
       dispatch({ type: 'SCAN_START' });
 
       // Create a deferred promise that the Provider's listener can resolve/reject
@@ -397,12 +384,12 @@ export const useBluetooth = (): UseBluetoothResult => {
         const scanSeconds = Math.max(1, Math.round(scanDurationMs / 1000));
         const timeoutId = setTimeout(async () => {
           if (state.isScanning) {
-            console.warn('[useBluetooth] Scan timed out.');
+            log.warn('[useBluetooth] Scan timed out.');
             try {
               // Force stop scan if timeout occurs
               await BleManager.stopScan();
             } catch (stopError) {
-              console.error(
+              log.error(
                 '[useBluetooth] Error stopping scan on timeout:',
                 stopError,
               );
@@ -413,20 +400,20 @@ export const useBluetooth = (): UseBluetoothResult => {
 
         // Start scan
         await BleManager.scan([], scanSeconds, false);
-        console.info('[useBluetooth] BleManager.scan initiated.');
+        log.info('[useBluetooth] BleManager.scan initiated.');
 
         // Wait for completion (resolved by BleManagerStopScan event in Provider)
         await scanPromiseRef.current.promise;
         clearTimeout(timeoutId);
       } catch (error) {
         const formattedError = handleError(error);
-        console.error('[useBluetooth] Scan error:', formattedError);
+        log.error('[useBluetooth] Scan error:', formattedError);
         // Cleanup
         if (state.isScanning) {
           try {
             await BleManager.stopScan();
           } catch (stopError) {
-            console.error(
+            log.error(
               '[useBluetooth] Error stopping scan after failure:',
               stopError,
             );
@@ -473,9 +460,7 @@ export const useBluetooth = (): UseBluetoothResult => {
       }
       if (state.connectedDevice) {
         if (state.connectedDevice.id === deviceId) {
-          console.warn(
-            `[useBluetooth] Already connected to device ${deviceId}.`,
-          );
+          log.warn(`[useBluetooth] Already connected to device ${deviceId}.`);
           return state.connectedDevice;
         } else {
           throw new Error(
@@ -484,7 +469,7 @@ export const useBluetooth = (): UseBluetoothResult => {
         }
       }
 
-      console.info(`[useBluetooth] Attempting connection to ${deviceId}...`);
+      log.info(`[useBluetooth] Attempting connection to ${deviceId}...`);
       dispatch({ type: 'CONNECT_START' });
 
       // Create deferred promise
@@ -494,7 +479,7 @@ export const useBluetooth = (): UseBluetoothResult => {
         // --- Internal Connection Logic ---
         // 1. Connect
         await BleManager.connect(deviceId);
-        console.info(
+        log.info(
           `[useBluetooth] Peripheral ${deviceId} connected. Retrieving services...`,
         );
 
@@ -504,7 +489,7 @@ export const useBluetooth = (): UseBluetoothResult => {
           await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
         }
         const peripheralInfo = await BleManager.retrieveServices(deviceId);
-        console.info(
+        log.info(
           `[useBluetooth] Services retrieved for ${deviceId}. Found:`,
           peripheralInfo.services?.map((s: { uuid: string }) => s.uuid),
           'Characteristics:',
@@ -546,7 +531,7 @@ export const useBluetooth = (): UseBluetoothResult => {
             // Use the actual UUID reported by the peripheral for filtering characteristics
             const peripheralServiceUUIDActualUpper =
               foundService.uuid.toUpperCase();
-            console.info(
+            log.info(
               `[useBluetooth] Found matching service: ${target.name} (Target: ${target.serviceUUID}, Peripheral reported: ${foundService.uuid}). Checking characteristics...`,
             );
 
@@ -557,7 +542,7 @@ export const useBluetooth = (): UseBluetoothResult => {
                   c.service.toUpperCase() === peripheralServiceUUIDActualUpper, // Use the matched peripheral service UUID
               ) ?? [];
 
-            console.info(
+            log.info(
               `[useBluetooth] Characteristics for service ${foundService.uuid}:`,
               characteristicsForService.map(
                 (c: { characteristic: string }) => c.characteristic,
@@ -592,15 +577,15 @@ export const useBluetooth = (): UseBluetoothResult => {
               },
             );
 
-            console.info(
+            log.info(
               `[useBluetooth] Searching for Write Characteristic: ${target.writeCharacteristicUUID} (or short). Found: ${!!writeCharacteristic}`,
             );
-            console.info(
+            log.info(
               `[useBluetooth] Searching for Notify Characteristic: ${target.notifyCharacteristicUUID} (or short). Found: ${!!notifyCharacteristic}`,
             );
 
             if (writeCharacteristic && notifyCharacteristic) {
-              console.info(
+              log.info(
                 `[useBluetooth] Found matching Write (${writeCharacteristic.characteristic}) and Notify (${notifyCharacteristic.characteristic}) characteristics.`,
               );
 
@@ -609,15 +594,15 @@ export const useBluetooth = (): UseBluetoothResult => {
                 'WriteWithoutResponse'; // Default
               if (writeCharacteristic.properties.Write) {
                 writeType = 'Write';
-                console.info(
+                log.info(
                   '[useBluetooth] Characteristic supports Write (with response).',
                 );
               } else if (writeCharacteristic.properties.WriteWithoutResponse) {
-                console.info(
+                log.info(
                   '[useBluetooth] Characteristic supports Write Without Response.',
                 );
               } else {
-                console.warn(
+                log.warn(
                   '[useBluetooth] Write characteristic found, but does not explicitly report Write or WriteWithoutResponse property. Assuming WriteWithoutResponse.',
                 );
                 // Keep default 'WriteWithoutResponse'
@@ -626,7 +611,7 @@ export const useBluetooth = (): UseBluetoothResult => {
               // 4. Start Notifications using the *actual* UUIDs found
               const serviceUUIDToUse = foundService.uuid;
               const notifyCharUUIDToUse = notifyCharacteristic.characteristic;
-              console.info(
+              log.info(
                 `[useBluetooth] Starting notifications for Service ${serviceUUIDToUse} / Characteristic ${notifyCharUUIDToUse}...`,
               );
               await BleManager.startNotification(
@@ -634,7 +619,7 @@ export const useBluetooth = (): UseBluetoothResult => {
                 serviceUUIDToUse, // Use actual found service UUID
                 notifyCharUUIDToUse, // Use actual found notify characteristic UUID
               );
-              console.info(
+              log.info(
                 `[useBluetooth] Notifications started for ${notifyCharUUIDToUse}.`,
               );
 
@@ -647,7 +632,7 @@ export const useBluetooth = (): UseBluetoothResult => {
               };
               break; // Found a compatible configuration
             } else {
-              console.info(
+              log.info(
                 `[useBluetooth] Service ${foundService.uuid} found, but required characteristics (Write: ${target.writeCharacteristicUUID}, Notify: ${target.notifyCharacteristicUUID}) not found within it.`,
               );
             }
@@ -656,7 +641,7 @@ export const useBluetooth = (): UseBluetoothResult => {
 
         // 5. Handle Connection Result
         if (foundConfig) {
-          console.info(
+          log.info(
             `[useBluetooth] Compatible configuration found and notifications started. Connection successful to ${deviceId}.`,
           );
           dispatch({
@@ -667,7 +652,7 @@ export const useBluetooth = (): UseBluetoothResult => {
           connectPromiseRef.current = null; // Clear ref
           return peripheralInfo;
         } else {
-          console.error(
+          log.error(
             '[useBluetooth] Connection failed: No compatible ELM327 service/characteristic configuration found.',
           );
           throw new Error(
@@ -676,7 +661,7 @@ export const useBluetooth = (): UseBluetoothResult => {
         }
       } catch (error) {
         const formattedError = handleError(error);
-        console.error(
+        log.error(
           `[useBluetooth] Connection process failed for ${deviceId}:`,
           formattedError,
         );
@@ -687,11 +672,11 @@ export const useBluetooth = (): UseBluetoothResult => {
         // Attempt cleanup: disconnect if possible
         try {
           await BleManager.disconnect(deviceId);
-          console.info(
+          log.info(
             `[useBluetooth] Disconnected device ${deviceId} after connection failure.`,
           );
         } catch (disconnectError) {
-          console.error(
+          log.error(
             `[useBluetooth] Error disconnecting after connection failure for ${deviceId}:`,
             disconnectError,
           );
@@ -708,17 +693,17 @@ export const useBluetooth = (): UseBluetoothResult => {
 
   const disconnect = useCallback(async (): Promise<void> => {
     if (state.isDisconnecting) {
-      console.warn('[useBluetooth] Disconnection already in progress.');
+      log.warn('[useBluetooth] Disconnection already in progress.');
       return disconnectPromiseRef.current?.promise ?? Promise.resolve();
     }
     if (!state.connectedDevice || !state.activeDeviceConfig) {
-      console.warn('[useBluetooth] No device currently connected.');
+      log.warn('[useBluetooth] No device currently connected.');
       return Promise.resolve();
     }
 
     const deviceId = state.connectedDevice.id;
     const config = state.activeDeviceConfig;
-    console.info(`[useBluetooth] Disconnecting from ${deviceId}...`);
+    log.info(`[useBluetooth] Disconnecting from ${deviceId}...`);
     dispatch({ type: 'DISCONNECT_START' });
 
     // Create deferred promise
@@ -726,7 +711,7 @@ export const useBluetooth = (): UseBluetoothResult => {
 
     try {
       // 1. Stop Notifications
-      console.info(
+      log.info(
         `[useBluetooth] Stopping notifications for ${config.notifyCharacteristicUUID}...`,
       );
       await BleManager.stopNotification(
@@ -734,13 +719,11 @@ export const useBluetooth = (): UseBluetoothResult => {
         config.serviceUUID,
         config.notifyCharacteristicUUID,
       );
-      console.info('[useBluetooth] Notifications stopped.');
+      log.info('[useBluetooth] Notifications stopped.');
 
       // 2. Disconnect Peripheral
       await BleManager.disconnect(deviceId);
-      console.info(
-        `[useBluetooth] BleManager.disconnect called for ${deviceId}.`,
-      );
+      log.info(`[useBluetooth] BleManager.disconnect called for ${deviceId}.`);
 
       // Note: The DEVICE_DISCONNECTED action triggered by the BleManagerDisconnectPeripheral
       // listener will handle the state update (setting connectedDevice to null, etc.)
@@ -750,7 +733,7 @@ export const useBluetooth = (): UseBluetoothResult => {
       disconnectPromiseRef.current?.resolve();
     } catch (error) {
       const formattedError = handleError(error);
-      console.error(
+      log.error(
         `[useBluetooth] Disconnect failed for ${deviceId}:`,
         formattedError,
       );
@@ -776,7 +759,7 @@ export const useBluetooth = (): UseBluetoothResult => {
   const executeCommand = useCallback(
     async (
       command: string,
-      returnType: string,
+      returnType: CommandReturnType,
       options?: { timeout?: number },
     ): Promise<string | Uint8Array | ChunkedResponse> => {
       if (!state.connectedDevice || !state.activeDeviceConfig) {
@@ -785,10 +768,17 @@ export const useBluetooth = (): UseBluetoothResult => {
       if (state.isAwaitingResponse) {
         throw new Error('Another command is already in progress.');
       }
+
+      // Clear existing command with proper cleanup
       if (currentCommandRef.current) {
-        console.warn('[useBluetooth] Stale command ref found - clearing.');
-        if (currentCommandRef.current.timeoutId)
+        log.warn('[useBluetooth] Stale command ref found - clearing.');
+        if (currentCommandRef.current.timeoutId) {
           clearTimeout(currentCommandRef.current.timeoutId);
+        }
+        dispatch({
+          type: 'COMMAND_FAILURE',
+          payload: new Error('Command cancelled due to new command starting.'),
+        });
         currentCommandRef.current.promise.reject(
           new Error('Command cancelled due to new command starting.'),
         );
@@ -800,31 +790,27 @@ export const useBluetooth = (): UseBluetoothResult => {
       const commandTimeoutDuration =
         options?.timeout ?? DEFAULT_COMMAND_TIMEOUT;
 
-      console.info(
-        `[useBluetooth] Sending command: "${command}" (Expect: ${returnType}, Timeout: ${commandTimeoutDuration}ms)`,
-      );
-
+      // Create promise with proper types
       const deferredPromise = createDeferredPromise<
         string | Uint8Array | ChunkedResponse
       >();
-      let timeoutId: NodeJS.Timeout | null = null;
 
       currentCommandRef.current = {
         promise: deferredPromise,
         timeoutId: null,
         responseBuffer: [],
-        responseChunks: [], // Initialize empty response chunks array
-        expectedReturnType: returnType as 'string' | 'bytes' | 'chunked',
+        responseChunks: [],
+        expectedReturnType: returnType,
       };
 
       dispatch({ type: 'SEND_COMMAND_START' });
 
-      timeoutId = setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         if (currentCommandRef.current?.promise === deferredPromise) {
           const error = new Error(
             `Command "${command}" timed out after ${commandTimeoutDuration}ms.`,
           );
-          console.error(`[useBluetooth] ${error.message}`);
+          log.error(`[useBluetooth] ${error.message}`);
           dispatch({ type: 'COMMAND_TIMEOUT' });
           deferredPromise.reject(error);
           currentCommandRef.current = null;
@@ -837,10 +823,9 @@ export const useBluetooth = (): UseBluetoothResult => {
 
       try {
         const commandString = command + ELM327_COMMAND_TERMINATOR;
-        const commandBytes = Array.from(
-          stringToBytes(commandString),
-        );
+        const commandBytes = Array.from(stringToBytes(commandString));
 
+        // Send command
         if (config.writeType === 'Write') {
           await BleManager.write(
             deviceId,
@@ -856,36 +841,65 @@ export const useBluetooth = (): UseBluetoothResult => {
             commandBytes,
           );
         }
-        console.info(
-          `[useBluetooth] Command "${command}" written. Waiting for response from Provider...`,
+
+        log.info(
+          `[useBluetooth] Command "${command}" written. Waiting for response...`,
         );
 
         const response = await deferredPromise.promise;
-        return response;
+
+        // Process response based on expected return type
+        switch (returnType) {
+          case CommandReturnType.STRING:
+            if (typeof response === 'string') {
+              const decodedResponse = bytesToString(response);
+              log.debug(
+                `[useBluetooth] Command "${command}" response processed:`,
+                `Original: "${response}"`,
+                `Decoded: "${decodedResponse}"`,
+              );
+              return decodedResponse;
+            }
+            throw new Error(
+              'Expected string response but received different type',
+            );
+
+          case CommandReturnType.BYTES:
+            if (response instanceof Uint8Array) {
+              return response;
+            }
+            if (typeof response === 'string') {
+              return stringToBytes(response);
+            }
+            throw new Error('Cannot convert response to bytes');
+
+          case CommandReturnType.CHUNKED:
+            if (typeof response === 'object' && 'chunks' in response) {
+              return response as ChunkedResponse;
+            }
+            throw new Error(
+              'Expected chunked response but received different type',
+            );
+
+          default:
+            throw new Error(`Unsupported return type: ${returnType}`);
+        }
       } catch (error) {
         const formattedError = handleError(error);
-        console.error(
-          `[useBluetooth] Error during command execution or processing "${command}":`,
+        log.error(
+          `[useBluetooth] Command "${command}" failed:`,
           formattedError,
         );
-        if (
-          currentCommandRef.current?.promise === deferredPromise &&
-          currentCommandRef.current.timeoutId
-        ) {
-          clearTimeout(currentCommandRef.current.timeoutId);
-        }
-        if (
-          state.isAwaitingResponse &&
-          currentCommandRef.current?.promise === deferredPromise
-        ) {
-          dispatch({
-            type: 'COMMAND_FAILURE',
-            payload: formattedError,
-          });
-        }
+
+        // Cleanup
         if (currentCommandRef.current?.promise === deferredPromise) {
+          if (currentCommandRef.current.timeoutId) {
+            clearTimeout(currentCommandRef.current.timeoutId);
+          }
           currentCommandRef.current = null;
+          dispatch({ type: 'COMMAND_FAILURE', payload: formattedError });
         }
+
         throw formattedError;
       }
     },
@@ -894,7 +908,6 @@ export const useBluetooth = (): UseBluetoothResult => {
       state.activeDeviceConfig,
       state.isAwaitingResponse,
       dispatch,
-      currentCommandRef,
     ],
   );
 
@@ -942,27 +955,76 @@ export const useBluetooth = (): UseBluetoothResult => {
   const sendCommandRawChunked = useCallback(
     async (
       command: string,
-      options?: { timeout?: number },
+      options?: {
+        timeout?: number;
+        preserveRaw?: boolean;
+      },
     ): Promise<ChunkedResponse> => {
-      const result = await executeCommand(
-        command,
-        CommandReturnType.CHUNKED,
-        options,
-      );
-      if (typeof result === 'string' || result instanceof Uint8Array) {
-        throw new Error(
-          'Internal error: Expected chunked response but received string or bytes.',
-        );
+      if (!state.connectedDevice || !state.activeDeviceConfig) {
+        throw new Error('Not connected to a device.');
       }
-      return result as ChunkedResponse;
+
+      try {
+        const result = await executeCommand(
+          command,
+          CommandReturnType.CHUNKED,
+          options,
+        );
+
+        // Validate the response format
+        if (typeof result === 'string' || result instanceof Uint8Array) {
+          throw new Error(
+            'Expected chunked response but received string or bytes.',
+          );
+        }
+
+        const chunkedResponse = result as ChunkedResponse;
+
+        // Convert number arrays to Uint8Arrays if not already
+        const processedChunks = chunkedResponse.chunks.map(
+          (chunk: Uint8Array | number[]) => {
+            if (Array.isArray(chunk)) {
+              return new Uint8Array(chunk);
+            }
+            return chunk;
+          },
+        );
+
+        const response: ChunkedResponse = {
+          chunks: processedChunks,
+          totalBytes: processedChunks.reduce(
+            (acc: number, chunk: Uint8Array) => acc + chunk.length,
+            0,
+          ),
+          command: command,
+          ...(options?.preserveRaw && {
+            rawResponse: chunkedResponse.chunks.map(
+              (chunk: Uint8Array | number[]) =>
+                Array.isArray(chunk) ? chunk : Array.from(chunk),
+            ),
+          }),
+        };
+
+        log.info(
+          `[useBluetooth] Received ${response.chunks.length} chunks for command "${command}"`,
+        );
+        return response;
+      } catch (error) {
+        const formattedError = handleError(error);
+        log.error(
+          '[useBluetooth] Error in sendCommandRawChunked:',
+          formattedError,
+        );
+        throw formattedError;
+      }
     },
-    [executeCommand],
+    [state.connectedDevice, state.activeDeviceConfig, executeCommand],
   );
 
   const setStreaming = useCallback(
     (shouldStream: boolean): void => {
       if (!state.connectedDevice && shouldStream) {
-        console.error(
+        log.error(
           '[useBluetooth] Cannot start streaming: No device connected.',
         );
         return;
@@ -970,12 +1032,10 @@ export const useBluetooth = (): UseBluetoothResult => {
 
       // Only dispatch if the state is actually changing
       if (state.isStreaming !== shouldStream) {
-        console.info(
-          `[useBluetooth] Setting streaming status to: ${shouldStream}`,
-        );
+        log.info(`[useBluetooth] Setting streaming status to: ${shouldStream}`);
         dispatch({ type: 'SET_STREAMING_STATUS', payload: shouldStream });
       } else {
-        console.info(
+        log.info(
           `[useBluetooth] Streaming status is already ${shouldStream}. No change.`,
         );
       }

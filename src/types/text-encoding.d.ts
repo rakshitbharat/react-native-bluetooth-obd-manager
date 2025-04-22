@@ -6,7 +6,10 @@ declare module 'text-encoding' {
   }
 
   export class TextDecoder {
-    constructor(encoding?: string, options?: { fatal?: boolean; ignoreBOM?: boolean });
+    constructor(
+      encoding?: string,
+      options?: { fatal?: boolean; ignoreBOM?: boolean },
+    );
     readonly encoding: string;
     readonly fatal: boolean;
     readonly ignoreBOM: boolean;
