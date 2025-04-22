@@ -9,16 +9,22 @@ type BytesInput = ValidInput | null | undefined;
 
 // Type guard functions
 const isNumberArray = (input: unknown): input is NumberArray => {
-  return Array.isArray(input) && input.every(item => 
-    typeof item === 'number' || 
-    (Array.isArray(item) && item.every(num => typeof num === 'number'))
+  return (
+    Array.isArray(input) &&
+    input.every(
+      item =>
+        typeof item === 'number' ||
+        (Array.isArray(item) && item.every(num => typeof num === 'number')),
+    )
   );
 };
 
 const isValidInput = (input: unknown): input is ValidInput => {
-  return typeof input === 'string' || 
-         input instanceof Uint8Array || 
-         isNumberArray(input);
+  return (
+    typeof input === 'string' ||
+    input instanceof Uint8Array ||
+    isNumberArray(input)
+  );
 };
 
 // Utility helper functions
@@ -28,13 +34,15 @@ const validateInput = (input: unknown, fnName: string): void => {
     return;
   }
   if (!isValidInput(input)) {
-    log.error(`[ecuUtils] ${fnName} received invalid input type: ${typeof input}`);
+    log.error(
+      `[ecuUtils] ${fnName} received invalid input type: ${typeof input}`,
+    );
   }
 };
 
 const flatten = (arr: unknown): number[] => {
   if (!Array.isArray(arr)) return [];
-  
+
   return arr.reduce<number[]>((acc, item) => {
     if (Array.isArray(item)) {
       return [...acc, ...flatten(item)];
@@ -123,9 +131,10 @@ export const bytesToHex = (input: BytesInput): string => {
   }
 
   try {
-    const bytes = input instanceof Uint8Array ? 
-      Array.from(input) : 
-      flatten(input as NumberArray);
+    const bytes =
+      input instanceof Uint8Array
+        ? Array.from(input)
+        : flatten(input as NumberArray);
 
     return bytes
       .map(byte => {
@@ -162,17 +171,18 @@ export const bytesToString = (input: BytesInput): string => {
   if (typeof input === 'string') return input;
 
   try {
-    const bytes = input instanceof Uint8Array ? 
-      input : 
-      new Uint8Array(flatten(input as NumberArray));
-    
+    const bytes =
+      input instanceof Uint8Array
+        ? input
+        : new Uint8Array(flatten(input as NumberArray));
+
     // Try UTF-8 first
     const utf8Decoder = new TextDecoder('utf-8', { fatal: false });
     const decoded = utf8Decoder.decode(bytes);
-    
+
     // If UTF-8 worked without replacement chars, return it
     if (!decoded.includes('\uFFFD')) return decoded;
-    
+
     // Try Latin1 as fallback
     const latin1Decoder = new TextDecoder('iso-8859-1');
     return latin1Decoder.decode(bytes);
@@ -208,7 +218,7 @@ export const stringToBytes = (input: BytesInput): Uint8Array => {
 
   // If already Uint8Array, return as is
   if (input instanceof Uint8Array) return input;
-  
+
   if (Array.isArray(input)) {
     return new Uint8Array(flatten(input));
   }
@@ -252,10 +262,7 @@ export const stringToBytes = (input: BytesInput): Uint8Array => {
  * log.log(hex); // "001A"
  * ```
  */
-export const toHexString = (
-  input: BytesInput | number,
-  width = 2
-): string => {
+export const toHexString = (input: BytesInput | number, width = 2): string => {
   validateInput(input, 'toHexString');
   if (input == null) return ''.padStart(width, '0');
 
@@ -290,14 +297,13 @@ export const toHexString = (
  */
 export const cleanElmResponse = (
   input: BytesInput,
-  command?: string
+  command?: string,
 ): string => {
   validateInput(input, 'cleanElmResponse');
   if (!input) return '';
 
   // Convert to string if needed
-  const strResponse =
-    typeof input === 'string' ? input : bytesToString(input);
+  const strResponse = typeof input === 'string' ? input : bytesToString(input);
 
   // Split into lines and filter out empty ones
   const lines = strResponse
