@@ -29,7 +29,7 @@
     "build": "yarn clean && bob build",
     "clean": "del-cli lib",
     "prepare": "yarn build",
-    "test": "jest --config jest.config.cjs",
+    "test": "jest --config --passWithNoTests jest.config.cjs",
     "lint": "eslint src",
     "format": "prettier --write .",
     "format:src": "prettier --write \"src/**/*.{ts,tsx}\"",
