@@ -810,7 +810,7 @@ export const useBluetooth = (): UseBluetoothResult => {
         timeoutId: null,
         chunks: [], // Add this property
         receivedRawChunks: [], // Keep this property
-        expectedReturnType: returnType
+        expectedReturnType: returnType,
       };
 
       dispatch({ type: 'SEND_COMMAND_START' });
