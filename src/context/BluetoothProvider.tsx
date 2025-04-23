@@ -266,9 +266,10 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     }
   }, []);
 
-  // Update handleIncomingData dependencies
+  // Add type validation for response handling
   const handleIncomingData = useCallback(
-    (value: number[]) => {
+    (data: BleManagerDidUpdateValueForCharacteristicEvent) => {
+      const value = data.value;
       log.info(
         '[BluetoothProvider] Received raw data:',
         JSON.stringify(value),
@@ -276,30 +277,55 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         bytesToString(value),
       );
 
-      // Only process data if we're awaiting a response and have an active command
-      if (state.isAwaitingResponse && currentCommandRef.current) {
+      // Process data only if we have an active command
+      if (currentCommandRef.current) {
         try {
           const commandState = currentCommandRef.current;
 
-          // Simply accumulate the data
+          // Store raw bytes first (important for future raw byte handling)
           commandState.responseChunks.push([...value]);
           commandState.responseBuffer.push(...value);
 
-          // Check if this chunk contains the ELM327 prompt character ('>') which signals end of response
+          // Check for terminator character in raw bytes
           if (value.indexOf(ELM327_COMMAND_TERMINATOR) !== -1) {
             log.info('[BluetoothProvider] Response terminator received');
 
-            const response = bytesToString(commandState.responseBuffer);
+            // Handle response based on expected return type
+            let finalResponse: string | Uint8Array | ChunkedResponse;
+
+            switch (commandState.expectedReturnType) {
+              case 'string':
+                finalResponse = bytesToString(commandState.responseBuffer);
+                break;
+              case 'bytes':
+                finalResponse = new Uint8Array(commandState.responseBuffer);
+                break;
+              case 'chunked':
+                finalResponse = {
+                  chunks: commandState.responseChunks.map(
+                    chunk => new Uint8Array(chunk),
+                  ),
+                  totalBytes: commandState.responseBuffer.length,
+                  command: '', // Add command if needed
+                };
+                break;
+              default:
+                throw new Error(
+                  `Unsupported return type: ${commandState.expectedReturnType}`,
+                );
+            }
+
             log.info(
-              '[BluetoothProvider] Complete response received:',
-              response,
+              '[BluetoothProvider] Complete response processed:',
+              typeof finalResponse === 'string'
+                ? finalResponse
+                : '<binary data>',
             );
 
-            // Let the command handler deal with processing/cleaning the response
             const promiseToResolve = commandState.promise;
             currentCommandRef.current = null;
             dispatch({ type: 'COMMAND_SUCCESS' });
-            promiseToResolve.resolve(response);
+            promiseToResolve.resolve(finalResponse);
           }
         } catch (error) {
           log.error(
@@ -312,10 +338,35 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
           }
           dispatch({ type: 'COMMAND_FAILURE', payload: handleError(error) });
         }
+      } else {
+        // Log received data even when no command is active
+        log.debug(
+          '[BluetoothProvider] Received data with no active command:',
+          bytesToString(value),
+        );
       }
     },
-    [state.isAwaitingResponse],
-  ); // Remove state.connectedDevice dependency since it's not used
+    [],
+  ); // No dependencies needed as it uses refs and dispatch from context
+
+  // Update the useEffect to use the memoized handleIncomingData
+  useEffect(() => {
+    log.info(
+      '[BluetoothProvider] Setting up BLE data notification listener...',
+    );
+
+    const dataListener = bleManagerEmitter.addListener(
+      'BleManagerDidUpdateValueForCharacteristic',
+      handleIncomingData,
+    );
+
+    return () => {
+      log.info(
+        '[BluetoothProvider] Removing BLE data notification listener...',
+      );
+      dataListener.remove();
+    };
+  }, [handleIncomingData]); // Add handleIncomingData as dependency
 
   /**
    * Ensures consistent error handling by converting any error type to Error.
@@ -355,33 +406,6 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         });
       });
   }, []);
-
-  // Data Notification Listener - Re-register when handler changes
-  useEffect(() => {
-    log.info(
-      '[BluetoothProvider] Setting up BLE data notification listener...',
-    );
-    const dataListener = bleManagerEmitter.addListener(
-      'BleManagerDidUpdateValueForCharacteristic',
-      (data: BleManagerDidUpdateValueForCharacteristicEvent) => {
-        log.info(
-          `[BluetoothProvider] Received data from characteristic: ${data.characteristic}`,
-        );
-        // log.log(JSON.stringify(data.value)); // Already logged in handleIncomingData
-
-        // Directly call the handleIncomingData passed to this effect instance
-        handleIncomingData(data.value);
-      },
-    );
-
-    // Cleanup function removes the specific listener added in this effect run
-    return () => {
-      log.info(
-        '[BluetoothProvider] Removing BLE data notification listener...',
-      );
-      dataListener.remove();
-    };
-  }, [handleIncomingData]); // Add handleIncomingData as a dependency
 
   // Other BLE State Listeners
   useEffect(() => {
