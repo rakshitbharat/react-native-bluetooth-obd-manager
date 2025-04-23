@@ -781,13 +781,18 @@ export const useBluetooth = (): UseBluetoothResult => {
         if (currentCommandRef.current.timeoutId) {
           clearTimeout(currentCommandRef.current.timeoutId);
         }
+        // Reject the previous promise if it exists and hasn't been resolved/rejected
+        // Check if promise exists before rejecting
+        if (currentCommandRef.current.promise) {
+          currentCommandRef.current.promise.reject(
+            new Error('Command cancelled due to new command starting.'),
+          );
+        }
+        // Dispatch failure for the previous command state
         dispatch({
           type: 'COMMAND_FAILURE',
           payload: new Error('Command cancelled due to new command starting.'),
         });
-        currentCommandRef.current.promise.reject(
-          new Error('Command cancelled due to new command starting.'),
-        );
         currentCommandRef.current = null;
       }
 
@@ -797,30 +802,40 @@ export const useBluetooth = (): UseBluetoothResult => {
         options?.timeout ?? DEFAULT_COMMAND_TIMEOUT;
 
       // Create promise with the internal response type
-      const deferredPromise = createDeferredPromise<InternalCommandResponse>(); // Changed type here
+      const deferredPromise = createDeferredPromise<InternalCommandResponse>();
 
-      // Update the command initialization
+      // Update the command initialization to include receivedRawChunks
       currentCommandRef.current = {
         promise: deferredPromise,
         timeoutId: null,
-        chunks: [], // Initialize empty raw chunks array (number[][])
-        expectedReturnType: returnType,
+        chunks: [], // Add this property
+        receivedRawChunks: [], // Keep this property
+        expectedReturnType: returnType
       };
 
       dispatch({ type: 'SEND_COMMAND_START' });
 
       const timeoutId = setTimeout(() => {
-        if (currentCommandRef.current?.promise === deferredPromise) {
+        // Check if the command associated with this timeout is still the active one
+        if (
+          currentCommandRef.current?.promise === deferredPromise &&
+          currentCommandRef.current?.timeoutId === timeoutId // Ensure it's the correct timeout
+        ) {
           const error = new Error(
             `Command "${command}" timed out after ${commandTimeoutDuration}ms.`,
           );
           log.error(`[useBluetooth] ${error.message}`);
-          dispatch({ type: 'COMMAND_TIMEOUT' });
+          dispatch({ type: 'COMMAND_TIMEOUT' }); // Dispatch specific timeout action
           deferredPromise.reject(error);
-          currentCommandRef.current = null;
+          currentCommandRef.current = null; // Clear the ref on timeout
+        } else {
+          log.warn(
+            `[useBluetooth] Timeout fired for an old or already completed command "${command}". Ignoring.`,
+          );
         }
       }, commandTimeoutDuration);
 
+      // Store the timeoutId in the ref *after* creating it
       if (currentCommandRef.current) {
         currentCommandRef.current.timeoutId = timeoutId;
       }
@@ -830,6 +845,9 @@ export const useBluetooth = (): UseBluetoothResult => {
         const commandBytes = Array.from(stringToBytes(commandString));
 
         // Send command
+        log.info(
+          `[useBluetooth] Writing command "${command}" using ${config.writeType}...`,
+        );
         if (config.writeType === 'Write') {
           await BleManager.write(
             deviceId,
@@ -847,24 +865,28 @@ export const useBluetooth = (): UseBluetoothResult => {
         }
 
         log.info(
-          `[useBluetooth] Command "${command}" written. Waiting for internal response...`,
+          `[useBluetooth] Command "${command}" written. Waiting for internal response promise...`,
         );
 
-        // Await the internal response structure
+        // Await the internal response structure (resolved by handleIncomingData in Provider)
         const internalResponse = await deferredPromise.promise; // Type is InternalCommandResponse
+
+        log.info(
+          `[useBluetooth] Internal response received for command "${command}". Processing based on returnType: ${returnType}`,
+        );
 
         // Process internal response based on the requested return type
         switch (returnType) {
           case CommandReturnType.STRING:
-            // Pass only the 'chunks' property to match ChunkContainer
+            // Use the utility function with the received chunks
             return chunksToString({ chunks: internalResponse.chunks });
 
           case CommandReturnType.BYTES:
-            // Pass only the 'chunks' property to match ChunkContainer
+            // Use the utility function with the received chunks
             return concatenateChunks({ chunks: internalResponse.chunks });
 
           case CommandReturnType.CHUNKED: {
-            // Construct the public ChunkedResponse object
+            // Construct the public ChunkedResponse object directly from internal response
             const chunkedResult: ChunkedResponse = {
               chunks: internalResponse.chunks,
               rawResponse: internalResponse.rawResponse,
@@ -873,26 +895,53 @@ export const useBluetooth = (): UseBluetoothResult => {
           }
 
           default:
-            // Should ideally be caught by TypeScript, but good practice to have default
+            // This case should be unreachable due to TypeScript checks on CommandReturnType
+            log.error(
+              `[useBluetooth] Unsupported return type encountered: ${returnType}`,
+            );
             throw new Error(`Unsupported return type: ${returnType}`);
         }
       } catch (error) {
         const formattedError = handleError(error);
         log.error(
-          `[useBluetooth] Command "${command}" failed:`,
+          `[useBluetooth] Command "${command}" execution failed:`,
           formattedError,
         );
 
-        // Cleanup
+        // Ensure cleanup happens only if this is still the active command
         if (currentCommandRef.current?.promise === deferredPromise) {
           if (currentCommandRef.current.timeoutId) {
             clearTimeout(currentCommandRef.current.timeoutId);
           }
-          currentCommandRef.current = null;
+          // Reject the promise if it hasn't been settled yet (e.g., write failed before response)
+          // Check if the promise is still pending before rejecting
+          // Note: This check might be complex; relying on the catch block is usually sufficient
+          // deferredPromise.reject(formattedError); // Consider if needed or if catch is enough
+
+          currentCommandRef.current = null; // Clear the ref
+          // Dispatch failure only if the command wasn't already handled (e.g., by timeout)
+          // Check state? Or just dispatch? Let's dispatch for safety.
           dispatch({ type: 'COMMAND_FAILURE', payload: formattedError });
+        } else {
+          log.warn(
+            `[useBluetooth] Error caught for command "${command}", but it's no longer the active command. Ignoring cleanup for this specific error instance.`,
+          );
         }
 
-        throw formattedError;
+        throw formattedError; // Re-throw the error for the caller
+      } finally {
+        // Final cleanup check: Ensure timeout is cleared if the promise settled
+        // (either resolved successfully or rejected by an error other than timeout)
+        // This guards against race conditions where the promise settles *just* before the timeout fires.
+        if (currentCommandRef.current?.promise === deferredPromise) {
+          if (currentCommandRef.current.timeoutId) {
+            clearTimeout(currentCommandRef.current.timeoutId);
+            // Optionally nullify timeoutId in ref if command is considered complete here
+            // currentCommandRef.current.timeoutId = null;
+          }
+          // If the command succeeded, the ref should be cleared by the provider/handler
+          // If it failed here, it's cleared in the catch block.
+        }
       }
     },
     [
@@ -900,7 +949,7 @@ export const useBluetooth = (): UseBluetoothResult => {
       state.activeDeviceConfig,
       state.isAwaitingResponse,
       dispatch,
-      currentCommandRef,
+      currentCommandRef, // Add currentCommandRef as dependency
     ],
   );
 
@@ -1003,12 +1052,19 @@ export const useBluetooth = (): UseBluetoothResult => {
   // Add new useEffect for currentCommandRef dependency
   useEffect(() => {
     // Handle currentCommandRef changes if needed
+    // Cleanup function to clear timeout if component unmounts or ref changes mid-command
     return () => {
       if (currentCommandRef.current?.timeoutId) {
+        log.debug(
+          '[useBluetooth] Cleanup effect: Clearing timeout for potentially active command.',
+        );
         clearTimeout(currentCommandRef.current.timeoutId);
+        // Optionally reject the promise here if unmounting means cancellation
+        // currentCommandRef.current?.promise?.reject(new Error("Component unmounted during command execution"));
+        // currentCommandRef.current = null; // Consider if resetting ref is needed here
       }
     };
-  }, [currentCommandRef]);
+  }, [currentCommandRef]); // Dependency on the ref wrapper itself
 
   // --- Effect to process incoming data for sendCommand ---
   // NOTE: The useEffect hook previously here for handling incoming data and decoding

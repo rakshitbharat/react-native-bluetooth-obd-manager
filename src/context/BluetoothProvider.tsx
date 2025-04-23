@@ -51,13 +51,15 @@ interface InternalCommandResponse {
  */
 interface CommandExecutionState {
   /** Promise that will resolve with the internal command response structure */
-  promise: DeferredPromise<InternalCommandResponse>; // Changed type here
+  promise: DeferredPromise<InternalCommandResponse>;
   /** Timeout ID for command expiration */
   timeoutId: NodeJS.Timeout | null;
   /** Raw bytes stored as separate chunks exactly as received (number[][]) */
   chunks: number[][];
   /** Expected format of the command's response (used by executeCommand) */
   expectedReturnType: 'string' | 'bytes' | 'chunked';
+  /** Raw chunks received from the device before processing */
+  receivedRawChunks: number[][];
 }
 
 /**
