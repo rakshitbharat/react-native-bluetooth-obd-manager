@@ -795,11 +795,11 @@ export const useBluetooth = (): UseBluetoothResult => {
         string | Uint8Array | ChunkedResponse
       >();
 
+      // Update the command initialization
       currentCommandRef.current = {
         promise: deferredPromise,
         timeoutId: null,
-        responseBuffer: [],
-        responseChunks: [],
+        chunks: [], // Initialize empty chunks array instead of rawBytes
         expectedReturnType: returnType,
       };
 
@@ -992,10 +992,6 @@ export const useBluetooth = (): UseBluetoothResult => {
 
         const response: ChunkedResponse = {
           chunks: processedChunks,
-          totalBytes: processedChunks.reduce(
-            (acc: number, chunk: Uint8Array) => acc + chunk.length,
-            0,
-          ),
           command: command,
           ...(options?.preserveRaw && {
             rawResponse: chunkedResponse.chunks.map(

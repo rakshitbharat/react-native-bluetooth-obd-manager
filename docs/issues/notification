@@ -1,0 +1,9 @@
+i have done code review and found that the handleIncomingData called in BleManagerDidUpdateValueForCharacteristic
+
+and it is wrongly implemented
+BleManagerDidUpdateValueForCharacteristic whould be loaded on mount of context provider and it should removed on onmount of this provider only it means BleManagerDidUpdateValueForCharacteristic should be attached to useEffect(() => { where we add events to listeners with push and remove it on un mount
+
+now next is handleIncomingData cen get data with state or directly from BleManagerDidUpdateValueForCharacteristic but 
+BleManagerDidUpdateValueForCharacteristic is not and should never be unsubscribed because BleManagerDidUpdateValueForCharacteristic dnt have dependency on command fired or even the bluetooth device is connected or it dont have any relationship with the bluetooth package itself because its just a listener can it listenere based on BleManagerDidUpdateValueForCharacteristic and anyone can emit data to it
+
+please fix this problem and then we will move for next

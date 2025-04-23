@@ -83,7 +83,6 @@ export interface BleDisconnectPeripheralEvent {
  */
 export interface ChunkedResponse {
   chunks: Uint8Array[];
-  totalBytes: number;
   command: string;
   rawResponse?: number[][];
 }

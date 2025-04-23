@@ -48,10 +48,8 @@ interface CommandExecutionState {
   promise: DeferredPromise<string | Uint8Array | ChunkedResponse>;
   /** Timeout ID for command expiration */
   timeoutId: NodeJS.Timeout | null;
-  /** Buffer storing incoming response bytes */
-  responseBuffer: number[];
-  /** Array storing each chunk of response data as it arrives */
-  responseChunks: number[][];
+  /** Raw bytes stored as separate chunks exactly as received */
+  chunks: number[][]; // Just store raw chunks
   /** Expected format of the command's response */
   expectedReturnType: 'string' | 'bytes' | 'chunked';
 }
@@ -266,66 +264,32 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     }
   }, []);
 
-  // Add type validation for response handling
+  // Modify the handleIncomingData callback
   const handleIncomingData = useCallback(
     (data: BleManagerDidUpdateValueForCharacteristicEvent) => {
       const value = data.value;
       log.info(
-        '[BluetoothProvider] Received raw data:',
+        '[BluetoothProvider] Received data chunk:',
         JSON.stringify(value),
-        'ASCII:',
-        bytesToString(value),
       );
 
-      // Process data only if we have an active command
       if (currentCommandRef.current) {
         try {
           const commandState = currentCommandRef.current;
 
-          // Store raw bytes first (important for future raw byte handling)
-          commandState.responseChunks.push([...value]);
-          commandState.responseBuffer.push(...value);
+          // This preserves each chunk exactly as received
+          commandState.chunks.push([...value]);
 
-          // Check for terminator character in raw bytes
           if (value.indexOf(ELM327_COMMAND_TERMINATOR) !== -1) {
-            log.info('[BluetoothProvider] Response terminator received');
+            const { promise } = commandState;
+            const response: ChunkedResponse = {
+              chunks: commandState.chunks.map(chunk => new Uint8Array(chunk)),
+              command: '',
+            };
 
-            // Handle response based on expected return type
-            let finalResponse: string | Uint8Array | ChunkedResponse;
-
-            switch (commandState.expectedReturnType) {
-              case 'string':
-                finalResponse = bytesToString(commandState.responseBuffer);
-                break;
-              case 'bytes':
-                finalResponse = new Uint8Array(commandState.responseBuffer);
-                break;
-              case 'chunked':
-                finalResponse = {
-                  chunks: commandState.responseChunks.map(
-                    chunk => new Uint8Array(chunk),
-                  ),
-                  totalBytes: commandState.responseBuffer.length,
-                  command: '', // Add command if needed
-                };
-                break;
-              default:
-                throw new Error(
-                  `Unsupported return type: ${commandState.expectedReturnType}`,
-                );
-            }
-
-            log.info(
-              '[BluetoothProvider] Complete response processed:',
-              typeof finalResponse === 'string'
-                ? finalResponse
-                : '<binary data>',
-            );
-
-            const promiseToResolve = commandState.promise;
             currentCommandRef.current = null;
             dispatch({ type: 'COMMAND_SUCCESS' });
-            promiseToResolve.resolve(finalResponse);
+            promise.resolve(response);
           }
         } catch (error) {
           log.error(
@@ -339,15 +303,14 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
           dispatch({ type: 'COMMAND_FAILURE', payload: handleError(error) });
         }
       } else {
-        // Log received data even when no command is active
         log.debug(
           '[BluetoothProvider] Received data with no active command:',
-          bytesToString(value),
+          value,
         );
       }
     },
     [],
-  ); // No dependencies needed as it uses refs and dispatch from context
+  );
 
   // Update the useEffect to use the memoized handleIncomingData
   useEffect(() => {
@@ -483,7 +446,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
               if (currentCommandRef.current.timeoutId) {
                 clearTimeout(currentCommandRef.current.timeoutId);
               }
-              currentCommandRef.current.responseBuffer = [];
+              currentCommandRef.current.chunks = [];
               currentCommandRef.current = null;
             }
             dispatch({ type: 'DEVICE_DISCONNECTED' });
