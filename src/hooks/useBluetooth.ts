@@ -918,15 +918,31 @@ export const useBluetooth = (): UseBluetoothResult => {
     ): Promise<string> => {
       const result = await executeCommand(
         command,
-        CommandReturnType.STRING,
+        CommandReturnType.CHUNKED,
         options,
       );
-      if (typeof result !== 'string') {
-        throw new Error(
-          'Internal error: Expected string response but received bytes or chunks.',
-        );
+
+      // Type guard for ChunkedResponse
+      const chunkedResponse = result as ChunkedResponse;
+      if (!chunkedResponse?.chunks) {
+        throw new Error('Expected chunked response');
       }
-      return result;
+
+      // Concatenate all chunk arrays and create a single Uint8Array
+      let totalLength = 0;
+      chunkedResponse.chunks.forEach(chunk => {
+        totalLength += chunk.length;
+      });
+      
+      const combinedArray = new Uint8Array(totalLength);
+      let offset = 0;
+      chunkedResponse.chunks.forEach(chunk => {
+        combinedArray.set(chunk, offset);
+        offset += chunk.length;
+      });
+
+      // Convert to string
+      return bytesToString(combinedArray);
     },
     [executeCommand],
   );
@@ -938,83 +954,55 @@ export const useBluetooth = (): UseBluetoothResult => {
     ): Promise<Uint8Array> => {
       const result = await executeCommand(
         command,
-        CommandReturnType.BYTES,
+        CommandReturnType.CHUNKED,
         options,
       );
-      if (!(result instanceof Uint8Array)) {
-        throw new Error(
-          'Internal error: Expected byte response but received string or chunks.',
-        );
+
+      // Type guard for ChunkedResponse
+      const chunkedResponse = result as ChunkedResponse;
+      if (!chunkedResponse?.chunks) {
+        throw new Error('Expected chunked response');
       }
-      return result;
+
+      // Calculate total size and create final array
+      let totalLength = 0;
+      chunkedResponse.chunks.forEach(chunk => {
+        totalLength += chunk.length;
+      });
+      
+      const combinedArray = new Uint8Array(totalLength);
+      let offset = 0;
+      chunkedResponse.chunks.forEach(chunk => {
+        combinedArray.set(chunk, offset);
+        offset += chunk.length;
+      });
+
+      return combinedArray;
     },
     [executeCommand],
   );
 
-  // New function for chunked responses
   const sendCommandRawChunked = useCallback(
     async (
       command: string,
-      options?: {
-        timeout?: number;
-        preserveRaw?: boolean;
-      },
+      options?: { timeout?: number },
     ): Promise<ChunkedResponse> => {
-      if (!state.connectedDevice || !state.activeDeviceConfig) {
-        throw new Error('Not connected to a device.');
+      const result = await executeCommand(
+        command,
+        CommandReturnType.CHUNKED,
+        options,
+      );
+
+      // Type guard for ChunkedResponse
+      const chunkedResponse = result as ChunkedResponse;
+      if (!chunkedResponse?.chunks) {
+        throw new Error('Expected chunked response');
       }
 
-      try {
-        const result = await executeCommand(
-          command,
-          CommandReturnType.CHUNKED,
-          options,
-        );
-
-        // Validate the response format
-        if (typeof result === 'string' || result instanceof Uint8Array) {
-          throw new Error(
-            'Expected chunked response but received string or bytes.',
-          );
-        }
-
-        const chunkedResponse = result as ChunkedResponse;
-
-        // Convert number arrays to Uint8Arrays if not already
-        const processedChunks = chunkedResponse.chunks.map(
-          (chunk: Uint8Array | number[]) => {
-            if (Array.isArray(chunk)) {
-              return new Uint8Array(chunk);
-            }
-            return chunk;
-          },
-        );
-
-        const response: ChunkedResponse = {
-          chunks: processedChunks,
-          command: command,
-          ...(options?.preserveRaw && {
-            rawResponse: chunkedResponse.chunks.map(
-              (chunk: Uint8Array | number[]) =>
-                Array.isArray(chunk) ? chunk : Array.from(chunk),
-            ),
-          }),
-        };
-
-        log.info(
-          `[useBluetooth] Received ${response.chunks.length} chunks for command "${command}"`,
-        );
-        return response;
-      } catch (error) {
-        const formattedError = handleError(error);
-        log.error(
-          '[useBluetooth] Error in sendCommandRawChunked:',
-          formattedError,
-        );
-        throw formattedError;
-      }
+      // Return exactly as received, preserving all chunks
+      return chunkedResponse;
     },
-    [state.connectedDevice, state.activeDeviceConfig, executeCommand],
+    [executeCommand],
   );
 
   const setStreaming = useCallback(

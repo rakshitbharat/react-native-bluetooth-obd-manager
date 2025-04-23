@@ -289,6 +289,9 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
 
             currentCommandRef.current = null;
             dispatch({ type: 'COMMAND_SUCCESS' });
+            
+            log.info(JSON.stringify(response));
+
             promise.resolve(response);
           }
         } catch (error) {
