@@ -8,6 +8,7 @@ import type { PermissionStatus } from 'react-native-permissions';
 import type { BleError, ChunkedResponse } from '../types';
 import { stringToBytes, bytesToString } from '../utils/ecuUtils';
 import { log } from '../utils/logger';
+import { isChunkedResponse, concatenateChunks, chunksToString } from '../utils/byteUtils';
 
 import {
   useBluetoothDispatch,
@@ -911,99 +912,57 @@ export const useBluetooth = (): UseBluetoothResult => {
     ],
   );
 
-  const sendCommand = useCallback(
-    async (
-      command: string,
-      options?: { timeout?: number },
-    ): Promise<string> => {
-      const result = await executeCommand(
-        command,
-        CommandReturnType.CHUNKED,
-        options,
-      );
+  // Replace useCallback functions with regular async functions
+  async function sendCommand(
+    command: string,
+    options?: { timeout?: number },
+  ): Promise<string> {
+    const result = await executeCommand(
+      command,
+      CommandReturnType.CHUNKED,
+      options,
+    );
 
-      // Type guard for ChunkedResponse
-      const chunkedResponse = result as ChunkedResponse;
-      if (!chunkedResponse?.chunks) {
-        throw new Error('Expected chunked response');
-      }
+    if (!isChunkedResponse(result)) {
+      throw new Error('Expected chunked response');
+    }
 
-      // Concatenate all chunk arrays and create a single Uint8Array
-      let totalLength = 0;
-      chunkedResponse.chunks.forEach(chunk => {
-        totalLength += chunk.length;
-      });
-      
-      const combinedArray = new Uint8Array(totalLength);
-      let offset = 0;
-      chunkedResponse.chunks.forEach(chunk => {
-        combinedArray.set(chunk, offset);
-        offset += chunk.length;
-      });
+    return chunksToString(result);
+  }
 
-      // Convert to string
-      return bytesToString(combinedArray);
-    },
-    [executeCommand],
-  );
+  async function sendCommandRaw(
+    command: string,
+    options?: { timeout?: number },
+  ): Promise<Uint8Array> {
+    const result = await executeCommand(
+      command,
+      CommandReturnType.CHUNKED,
+      options,
+    );
 
-  const sendCommandRaw = useCallback(
-    async (
-      command: string,
-      options?: { timeout?: number },
-    ): Promise<Uint8Array> => {
-      const result = await executeCommand(
-        command,
-        CommandReturnType.CHUNKED,
-        options,
-      );
+    if (!isChunkedResponse(result)) {
+      throw new Error('Expected chunked response');
+    }
 
-      // Type guard for ChunkedResponse
-      const chunkedResponse = result as ChunkedResponse;
-      if (!chunkedResponse?.chunks) {
-        throw new Error('Expected chunked response');
-      }
+    return concatenateChunks(result);
+  }
 
-      // Calculate total size and create final array
-      let totalLength = 0;
-      chunkedResponse.chunks.forEach(chunk => {
-        totalLength += chunk.length;
-      });
-      
-      const combinedArray = new Uint8Array(totalLength);
-      let offset = 0;
-      chunkedResponse.chunks.forEach(chunk => {
-        combinedArray.set(chunk, offset);
-        offset += chunk.length;
-      });
+  async function sendCommandRawChunked(
+    command: string,
+    options?: { timeout?: number },
+  ): Promise<ChunkedResponse> {
+    const result = await executeCommand(
+      command,
+      CommandReturnType.CHUNKED,
+      options,
+    );
 
-      return combinedArray;
-    },
-    [executeCommand],
-  );
+    if (!isChunkedResponse(result)) {
+      throw new Error('Expected chunked response');
+    }
 
-  const sendCommandRawChunked = useCallback(
-    async (
-      command: string,
-      options?: { timeout?: number },
-    ): Promise<ChunkedResponse> => {
-      const result = await executeCommand(
-        command,
-        CommandReturnType.CHUNKED,
-        options,
-      );
-
-      // Type guard for ChunkedResponse
-      const chunkedResponse = result as ChunkedResponse;
-      if (!chunkedResponse?.chunks) {
-        throw new Error('Expected chunked response');
-      }
-
-      // Return exactly as received, preserving all chunks
-      return chunkedResponse;
-    },
-    [executeCommand],
-  );
+    return result;
+  }
 
   const setStreaming = useCallback(
     (shouldStream: boolean): void => {
