@@ -24,7 +24,6 @@ import type {
   Peripheral,
   BleManagerState,
   BleManagerDidUpdateValueForCharacteristicEvent,
-  ChunkedResponse,
 } from '../types';
 import {
   BluetoothDispatchContext,
@@ -32,25 +31,32 @@ import {
 } from './BluetoothContext';
 import { bluetoothReducer, initialState } from './BluetoothReducer';
 import type { PeripheralWithPrediction, DeferredPromise } from '../types';
-import { ELM327_COMMAND_TERMINATOR } from '../constants';
-import { bytesToString } from '../utils/ecuUtils';
 import { log } from '../utils/logger';
 
 const BleManagerModule = NativeModules.BleManager;
 const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
 
 /**
+ * Internal structure used to resolve the command promise within the provider.
+ */
+interface InternalCommandResponse {
+  /** Array of Uint8Array chunks */
+  chunks: Uint8Array[];
+  /** Array of raw number[] chunks */
+  rawResponse: number[][];
+}
+
+/**
  * Represents the state of a command being executed over Bluetooth.
- * This interface tracks the promise, timeout, and response data for each command.
  */
 interface CommandExecutionState {
-  /** Promise that will resolve with the command's response */
-  promise: DeferredPromise<string | Uint8Array | ChunkedResponse>;
+  /** Promise that will resolve with the internal command response structure */
+  promise: DeferredPromise<InternalCommandResponse>; // Changed type here
   /** Timeout ID for command expiration */
   timeoutId: NodeJS.Timeout | null;
-  /** Raw bytes stored as separate chunks exactly as received */
-  chunks: number[][]; // Just store raw chunks
-  /** Expected format of the command's response */
+  /** Raw bytes stored as separate chunks exactly as received (number[][]) */
+  chunks: number[][];
+  /** Expected format of the command's response (used by executeCommand) */
   expectedReturnType: 'string' | 'bytes' | 'chunked';
 }
 
@@ -267,7 +273,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
   // Modify the handleIncomingData callback
   const handleIncomingData = useCallback(
     (data: BleManagerDidUpdateValueForCharacteristicEvent) => {
-      const value = data.value;
+      const value = data.value; // This is number[]
       log.info(
         '[BluetoothProvider] Received data chunk:',
         JSON.stringify(value),
@@ -277,22 +283,32 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         try {
           const commandState = currentCommandRef.current;
 
-          // This preserves each chunk exactly as received
+          // Store raw number arrays
           commandState.chunks.push([...value]);
 
-          if (value.indexOf(ELM327_COMMAND_TERMINATOR) !== -1) {
+          // Check if the terminator character ('>', ASCII 62 or 0x3E) is present
+          // Directly use the ASCII code 62 since value is number[]
+          if (value.includes(62)) {
+            // 62 is the ASCII code for '>'
             const { promise } = commandState;
-            const response: ChunkedResponse = {
+
+            // Prepare the internal response object
+            const internalResponse: InternalCommandResponse = {
               chunks: commandState.chunks.map(chunk => new Uint8Array(chunk)),
-              command: '',
+              rawResponse: commandState.chunks, // Keep the raw number[][]
             };
 
+            // Clear the current command state
             currentCommandRef.current = null;
             dispatch({ type: 'COMMAND_SUCCESS' });
-            
-            log.info(JSON.stringify(response));
 
-            promise.resolve(response);
+            log.info(
+              '[BluetoothProvider] Command finished. Resolving internal promise with:',
+              JSON.stringify(internalResponse), // Log the internal structure
+            );
+
+            // Resolve the promise with the internal structure
+            promise.resolve(internalResponse);
           }
         } catch (error) {
           log.error(
@@ -300,8 +316,10 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
             error,
           );
           if (currentCommandRef.current?.promise) {
-            currentCommandRef.current.promise.reject(handleError(error));
-            currentCommandRef.current = null;
+            // Ensure error is an Error instance before rejecting
+            const formattedError = handleError(error);
+            currentCommandRef.current.promise.reject(formattedError);
+            currentCommandRef.current = null; // Clear ref on error
           }
           dispatch({ type: 'COMMAND_FAILURE', payload: handleError(error) });
         }
@@ -312,7 +330,7 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         );
       }
     },
-    [],
+    [], // No external dependencies needed here
   );
 
   // Update the useEffect to use the memoized handleIncomingData

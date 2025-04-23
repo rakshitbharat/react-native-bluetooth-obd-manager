@@ -78,20 +78,36 @@ export interface BleDisconnectPeripheralEvent {
 }
 
 /**
- * Interface representing chunked Bluetooth response data.
- * Each element in the array represents a distinct data packet received.
+ * Represents a response received as multiple chunks from the BLE device.
+ * This is the public structure returned by sendCommandRawChunked.
  */
 export interface ChunkedResponse {
+  /**
+   * An array of Uint8Array, where each element represents a single
+   * notification chunk received from the device.
+   */
   chunks: Uint8Array[];
-  command: string;
-  rawResponse?: number[][];
+  /**
+   * An array of number[], mirroring `chunks` but preserving the raw numeric
+   * byte values exactly as received from the underlying react-native-ble-manager library.
+   */
+  rawResponse: number[][];
+}
+
+/**
+ * Internal structure used to resolve the command promise within the provider.
+ * Contains both Uint8Array chunks and raw number[] chunks.
+ * @internal
+ */
+export interface InternalCommandResponse {
+  chunks: Uint8Array[];
+  rawResponse: number[][];
 }
 
 export interface CommandExecutionState {
-  promise: DeferredPromise<string | Uint8Array | ChunkedResponse>;
+  promise: DeferredPromise<string | number[][] | ChunkedResponse>;
   timeoutId: NodeJS.Timeout | null;
-  responseBuffer: number[];
-  responseChunks: number[][];
+  chunks: number[][]; // Updated to store array of number arrays
   expectedReturnType: 'string' | 'bytes' | 'chunked';
 }
 
