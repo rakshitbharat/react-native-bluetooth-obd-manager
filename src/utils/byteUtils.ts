@@ -42,6 +42,17 @@ export function chunksToString(container: ChunkContainer): string {
 }
 
 /**
+ * Converts an array of numbers (bytes) into a Uint8Array.
+ *
+ * @param {number[]} bytes The array of numbers representing bytes.
+ * @returns {Uint8Array} The corresponding Uint8Array.
+ */
+export function bytesToUint8Array(bytes: number[]): Uint8Array {
+  return Uint8Array.from(bytes);
+}
+
+
+/**
  * Converts a full 128-bit Bluetooth UUID string to its 16-bit short form if possible.
  * Standard Bluetooth Base UUID: 0000xxxx-0000-1000-8000-00805F9B34FB
  *
