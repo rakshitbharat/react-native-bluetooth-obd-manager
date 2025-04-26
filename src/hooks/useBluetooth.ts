@@ -752,7 +752,7 @@ export const useBluetooth = (): UseBluetoothResult => {
     async (
       command: string,
       returnType: CommandReturnType,
-      options?: { timeout?: number },
+      // Remove options parameter
     ): Promise<string | Uint8Array | ChunkedResponse> => {
       if (!state.connectedDevice || !state.activeDeviceConfig) {
         throw new Error('Not connected to a device.');
@@ -761,7 +761,8 @@ export const useBluetooth = (): UseBluetoothResult => {
       return executeCommandInternal(
         command,
         returnType,
-        options,
+        // Remove options argument
+        // options,
         state.connectedDevice, // Pass connected device
         state.activeDeviceConfig, // Pass active config
         state.isAwaitingResponse, // Pass awaiting state
@@ -778,15 +779,11 @@ export const useBluetooth = (): UseBluetoothResult => {
     ],
   );
 
-  const sendCommand = async (
-    command: string,
-    options?: { timeout?: number },
-  ): Promise<string> => {
+  const sendCommand = async (command: string): Promise<string> => {
     // Calls the executeCommand wrapper above
     const result = await executeCommand(
       command,
       CommandReturnType.CHUNKED, // Request chunked internally
-      options,
     );
 
     if (!isChunkedResponse(result)) {
@@ -799,15 +796,11 @@ export const useBluetooth = (): UseBluetoothResult => {
     return chunksToString(result); // Process the chunked response
   };
 
-  const sendCommandRaw = async (
-    command: string,
-    options?: { timeout?: number },
-  ): Promise<Uint8Array> => {
+  const sendCommandRaw = async (command: string): Promise<Uint8Array> => {
     // Calls the executeCommand wrapper above
     const result = await executeCommand(
       command,
       CommandReturnType.CHUNKED, // Request chunked internally
-      options,
     );
 
     if (!isChunkedResponse(result)) {
@@ -821,13 +814,11 @@ export const useBluetooth = (): UseBluetoothResult => {
 
   const sendCommandRawChunked = async (
     command: string,
-    options?: { timeout?: number },
   ): Promise<ChunkedResponse> => {
     // Calls the executeCommand wrapper above
     const result = await executeCommand(
       command,
       CommandReturnType.CHUNKED, // Request chunked internally
-      options,
     );
 
     if (!isChunkedResponse(result)) {

@@ -60,7 +60,6 @@ const handleError = (error: unknown): Error => {
 export const executeCommandInternal = async (
   command: string,
   returnType: CommandReturnType,
-  options: { timeout?: number } | undefined,
   connectedDevice: Peripheral, // Assume connectedDevice is not null here
   activeDeviceConfig: ActiveDeviceConfig, // Assume activeDeviceConfig is not null here
   isAwaitingResponse: boolean,
