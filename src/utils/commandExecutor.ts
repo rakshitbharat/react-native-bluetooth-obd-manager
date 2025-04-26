@@ -10,7 +10,6 @@ import type {
   BluetoothAction, // Import BluetoothAction
 } from '../types'; // Adjust path as needed
 import {
-  DEFAULT_COMMAND_TIMEOUT,
   ELM327_COMMAND_TERMINATOR,
   CommandReturnType,
   CommandReturnType as ReturnTypeEnum,
@@ -91,7 +90,7 @@ export const executeCommandInternal = async (
   }
 
   const deviceId = connectedDevice.id;
-  const commandTimeoutDuration = options?.timeout ?? DEFAULT_COMMAND_TIMEOUT;
+  const commandTimeoutDuration = options?.timeout ?? 0;
 
   const deferredPromise = createDeferredPromise<InternalCommandResponse>();
 
@@ -161,9 +160,16 @@ export const executeCommandInternal = async (
     // when multiple responses might be involved.
     const internalResponse = await deferredPromise.promise;
 
+    // Command succeeded
     log.info(
       `[commandExecutor] Internal response received for command "${command}". Processing based on returnType: ${returnType}`,
     );
+    dispatch({ type: 'COMMAND_SUCCESS' }); // Dispatch success
+    if (currentCommandRef.current?.timeoutId === timeoutId) {
+      clearTimeout(timeoutId); // Clear the specific timeout for this command
+      currentCommandRef.current.timeoutId = null;
+    }
+    currentCommandRef.current = null; // Clear the ref on success
 
     // --- Response processing needs adjustment later ---
     // This needs to handle the receivedRawChunks[responseIndex] structure
@@ -207,12 +213,5 @@ export const executeCommandInternal = async (
       );
     }
     throw formattedError;
-  } finally {
-    // Final cleanup check: Ensure timeout is cleared if the promise settled
-    if (currentCommandRef.current?.promise === deferredPromise) {
-      if (currentCommandRef.current.timeoutId) {
-        clearTimeout(currentCommandRef.current.timeoutId);
-      }
-    }
   }
 };
