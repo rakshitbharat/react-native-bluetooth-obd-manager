@@ -40,3 +40,25 @@ export function chunksToString(container: ChunkContainer): string {
   const combined = concatenateChunks(container);
   return bytesToString(combined);
 }
+
+/**
+ * Converts a full 128-bit Bluetooth UUID string to its 16-bit short form if possible.
+ * Standard Bluetooth Base UUID: 0000xxxx-0000-1000-8000-00805F9B34FB
+ *
+ * @param {string} uuid The full 128-bit UUID string.
+ * @returns {string | null} The 16-bit short UUID (e.g., "xxxx") in uppercase, or null if it doesn't match the base UUID format.
+ */
+export const getShortUUID = (uuid: string): string | null => {
+  if (typeof uuid !== 'string' || uuid.length !== 36) {
+    return null; // Invalid format
+  }
+  const upperUuid = uuid.toUpperCase();
+  const baseUuidSuffix = '-0000-1000-8000-00805F9B34FB';
+
+  if (upperUuid.startsWith('0000') && upperUuid.endsWith(baseUuidSuffix)) {
+    // Extract the 4 hex characters representing the short UUID
+    return upperUuid.substring(4, 8);
+  }
+
+  return null; // Doesn't match the standard base UUID pattern
+};

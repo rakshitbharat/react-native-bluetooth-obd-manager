@@ -1,17 +1,15 @@
-// src/hooks/useBluetooth.ts
-
 import { useCallback, useRef, useEffect } from 'react';
 import { Platform } from 'react-native';
 import BleManager, { type Peripheral } from 'react-native-ble-manager';
 import * as Permissions from 'react-native-permissions';
 import type { PermissionStatus } from 'react-native-permissions';
 import type { BleError, ChunkedResponse } from '../types';
-import { stringToBytes } from '../utils/ecuUtils';
 import { log } from '../utils/logger';
 import {
   isChunkedResponse,
   concatenateChunks,
   chunksToString,
+  getShortUUID, // Import the new helper
 } from '../utils/byteUtils';
 
 import {
@@ -19,75 +17,13 @@ import {
   useBluetoothState,
 } from '../context/BluetoothContext';
 import { useInternalCommandControl } from '../context/BluetoothProvider';
-import {
-  KNOWN_ELM327_TARGETS,
-  DEFAULT_COMMAND_TIMEOUT,
-  ELM327_COMMAND_TERMINATOR,
-  CommandReturnType,
-} from '../constants';
+import { KNOWN_ELM327_TARGETS, CommandReturnType } from '../constants';
 import type {
   ActiveDeviceConfig,
   UseBluetoothResult,
   DeferredPromise,
-  InternalCommandResponse, // Import the internal type if defined elsewhere, or define locally if needed
-} from '../types'; // Assuming InternalCommandResponse might be moved to types
-
-// Helper to create Promises that can be resolved/rejected externally
-// This is crucial for managing async operations triggered by BLE events
-function createDeferredPromise<T>(): DeferredPromise<T> {
-  let resolveFn!: (value: T | PromiseLike<T>) => void;
-  let rejectFn!: (reason: Error) => void;
-
-  const promise = new Promise<T>((resolve, reject) => {
-    resolveFn = resolve; // This automatically has the correct type
-    rejectFn = reject; // This automatically has the correct type
-  });
-
-  return { promise, resolve: resolveFn, reject: rejectFn };
-}
-
-// Helper function to extract short UUID (e.g., "FFF0") from standard Base UUID
-function getShortUUID(fullUUID: string): string | null {
-  const baseUUIDSuffix = '-0000-1000-8000-00805F9B34FB';
-  const upperFullUUID = fullUUID.toUpperCase();
-  // Check if it's a standard 16-bit or 32-bit UUID based on the common suffix
-  if (
-    upperFullUUID.startsWith('0000') &&
-    upperFullUUID.endsWith(baseUUIDSuffix)
-  ) {
-    return upperFullUUID.substring(4, 8); // Extract the XXXX part
-  }
-  // Add check for non-standard but common patterns if needed, e.g. VLinker
-  // else if ( specific check for other patterns ) { ... }
-  return null; // Not a standard short UUID pattern we recognize
-}
-
-// Update error handling to convert BleError to Error
-const handleError = (error: unknown): Error => {
-  if (error instanceof Error) {
-    return error;
-  }
-  // Handle BleError type
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'errorCode' in error &&
-    'message' in error
-  ) {
-    return new Error(
-      `BLE Error (${(error as BleError).errorCode}): ${(error as BleError).message}`,
-    );
-  }
-  return new Error(String(error));
-};
-
-// Fix error handling for null cases
-const handleStateError = (error: BleError | Error | null): Error => {
-  if (!error) {
-    return new Error('An unknown error occurred');
-  }
-  return handleError(error);
-};
+} from '../types';
+import { executeCommandInternal } from '../utils/commandExecutor';
 
 /**
  * Custom hook for managing Bluetooth connections with ELM327 OBD-II adapters.
@@ -136,6 +72,29 @@ export const useBluetooth = (): UseBluetoothResult => {
   const scanPromiseRef = useRef<DeferredPromise<void> | null>(null);
   const connectPromiseRef = useRef<DeferredPromise<Peripheral> | null>(null);
   const disconnectPromiseRef = useRef<DeferredPromise<void> | null>(null);
+
+  // Re-add handleStateError as it's used in multiple places within this hook
+  const handleStateError = (error: BleError | Error | null): Error => {
+    if (!error) {
+      return new Error('An unknown error occurred');
+    }
+    if (error instanceof Error) {
+      return error;
+    }
+    // Handle BleError type specifically if needed, otherwise treat as generic object
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'errorCode' in error && // Check for BleError properties
+      'message' in error
+    ) {
+      return new Error(
+        `BLE Error (${(error as BleError).errorCode}): ${(error as BleError).message}`,
+      );
+    }
+    // Fallback for other types
+    return new Error(String(error));
+  };
 
   // --- Permission Functions ---
 
@@ -192,7 +151,8 @@ export const useBluetooth = (): UseBluetoothResult => {
       dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: allGranted });
       return allGranted;
     } catch (error) {
-      const formattedError = handleError(error);
+      // Fix: Ensure error is handled before passing
+      const formattedError = handleStateError(error as Error | BleError | null);
       log.error('[useBluetooth] Permission check failed:', formattedError);
       dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: false });
       dispatch({ type: 'SET_ERROR', payload: formattedError });
@@ -298,7 +258,10 @@ export const useBluetooth = (): UseBluetoothResult => {
 
         return finalGranted;
       } catch (error) {
-        const formattedError = handleError(error);
+        // Fix: Ensure error is handled before passing
+        const formattedError = handleStateError(
+          error as Error | BleError | null,
+        );
         log.error('[useBluetooth] Permission request failed:', formattedError);
         dispatch({ type: 'SET_PERMISSIONS_STATUS', payload: false });
         dispatch({ type: 'SET_ERROR', payload: formattedError });
@@ -334,7 +297,10 @@ export const useBluetooth = (): UseBluetoothResult => {
         // The actual state change (isBluetoothOn = true) will be triggered
         // by the BleManagerDidUpdateState listener if the user accepts.
       } catch (error) {
-        const formattedError = handleError(error);
+        // Fix: Ensure error is handled before passing
+        const formattedError = handleStateError(
+          error as Error | BleError | null,
+        );
         log.error(
           '[useBluetooth] Failed to request Bluetooth enable (e.g., user denied):',
           formattedError,
@@ -384,7 +350,11 @@ export const useBluetooth = (): UseBluetoothResult => {
       dispatch({ type: 'SCAN_START' });
 
       // Create a deferred promise that the Provider's listener can resolve/reject
-      scanPromiseRef.current = createDeferredPromise<void>();
+      scanPromiseRef.current = {
+        promise: null as unknown as Promise<void>,
+        resolve: () => {},
+        reject: () => {},
+      };
 
       try {
         const scanSeconds = Math.max(1, Math.round(scanDurationMs / 1000));
@@ -412,7 +382,10 @@ export const useBluetooth = (): UseBluetoothResult => {
         await scanPromiseRef.current.promise;
         clearTimeout(timeoutId);
       } catch (error) {
-        const formattedError = handleError(error);
+        // Fix: Ensure error is handled before passing
+        const formattedError = handleStateError(
+          error as Error | BleError | null,
+        );
         log.error('[useBluetooth] Scan error:', formattedError);
         // Cleanup
         if (state.isScanning) {
@@ -428,19 +401,18 @@ export const useBluetooth = (): UseBluetoothResult => {
         dispatch({ type: 'SET_ERROR', payload: formattedError });
         dispatch({ type: 'SCAN_STOP' });
         if (scanPromiseRef.current) {
-          scanPromiseRef.current.reject(handleStateError(state.error));
+          // Fix: Pass the already formatted error
+          scanPromiseRef.current.reject(formattedError);
           scanPromiseRef.current = null;
         }
         throw formattedError;
       }
-
-      return scanPromiseRef.current?.promise;
     },
     [
       state.isBluetoothOn,
       state.hasPermissions,
       state.isScanning,
-      state.error,
+      // Remove state.error dependency if formattedError is used
       dispatch,
     ],
   );
@@ -479,7 +451,11 @@ export const useBluetooth = (): UseBluetoothResult => {
       dispatch({ type: 'CONNECT_START' });
 
       // Create deferred promise
-      connectPromiseRef.current = createDeferredPromise<Peripheral>();
+      connectPromiseRef.current = {
+        promise: null as unknown as Promise<Peripheral>,
+        resolve: () => {},
+        reject: () => {},
+      };
 
       try {
         // --- Internal Connection Logic ---
@@ -524,7 +500,7 @@ export const useBluetooth = (): UseBluetoothResult => {
               // Direct match (full UUID)
               if (peripheralServiceUUIDUpper === targetServiceUUIDUpper)
                 return true;
-              // Check if peripheral reported short UUID matches target's short UUID
+              // Use imported getShortUUID
               const shortTargetUUID = getShortUUID(targetServiceUUIDUpper);
               return (
                 shortTargetUUID !== null &&
@@ -561,6 +537,7 @@ export const useBluetooth = (): UseBluetoothResult => {
                 const peripheralCharUUIDUpper = c.characteristic.toUpperCase();
                 if (peripheralCharUUIDUpper === targetWriteCharUUIDUpper)
                   return true;
+                // Use imported getShortUUID
                 const shortTargetUUID = getShortUUID(targetWriteCharUUIDUpper);
                 return (
                   shortTargetUUID !== null &&
@@ -575,6 +552,7 @@ export const useBluetooth = (): UseBluetoothResult => {
                 const peripheralCharUUIDUpper = c.characteristic.toUpperCase();
                 if (peripheralCharUUIDUpper === targetNotifyCharUUIDUpper)
                   return true;
+                // Use imported getShortUUID
                 const shortTargetUUID = getShortUUID(targetNotifyCharUUIDUpper);
                 return (
                   shortTargetUUID !== null &&
@@ -666,7 +644,10 @@ export const useBluetooth = (): UseBluetoothResult => {
           );
         }
       } catch (error) {
-        const formattedError = handleError(error);
+        // Fix: Ensure error is handled before passing
+        const formattedError = handleStateError(
+          error as Error | BleError | null,
+        );
         log.error(
           `[useBluetooth] Connection process failed for ${deviceId}:`,
           formattedError,
@@ -713,7 +694,11 @@ export const useBluetooth = (): UseBluetoothResult => {
     dispatch({ type: 'DISCONNECT_START' });
 
     // Create deferred promise
-    disconnectPromiseRef.current = createDeferredPromise<void>();
+    disconnectPromiseRef.current = {
+      promise: null as unknown as Promise<void>,
+      resolve: () => {},
+      reject: () => {},
+    };
 
     try {
       // 1. Stop Notifications
@@ -738,7 +723,8 @@ export const useBluetooth = (): UseBluetoothResult => {
       dispatch({ type: 'DISCONNECT_SUCCESS' }); // Optional: signal immediate success after call
       disconnectPromiseRef.current?.resolve();
     } catch (error) {
-      const formattedError = handleError(error);
+      // Fix: Ensure error is handled before passing
+      const formattedError = handleStateError(error as Error | BleError | null);
       log.error(
         `[useBluetooth] Disconnect failed for ${deviceId}:`,
         formattedError,
@@ -761,7 +747,7 @@ export const useBluetooth = (): UseBluetoothResult => {
 
   // --- Command Functions ---
 
-  // Updated executeCommand to handle the chunked return type
+  // Replace the old executeCommand implementation with a wrapper calling the internal one
   const executeCommand = useCallback(
     async (
       command: string,
@@ -771,243 +757,86 @@ export const useBluetooth = (): UseBluetoothResult => {
       if (!state.connectedDevice || !state.activeDeviceConfig) {
         throw new Error('Not connected to a device.');
       }
-      if (state.isAwaitingResponse) {
-        throw new Error('Another command is already in progress.');
-      }
-
-      // Clear existing command with proper cleanup
-      if (currentCommandRef.current) {
-        log.warn('[useBluetooth] Stale command ref found - clearing.');
-        if (currentCommandRef.current.timeoutId) {
-          clearTimeout(currentCommandRef.current.timeoutId);
-        }
-        // Reject the previous promise if it exists and hasn't been resolved/rejected
-        // Check if promise exists before rejecting
-        if (currentCommandRef.current.promise) {
-          currentCommandRef.current.promise.reject(
-            new Error('Command cancelled due to new command starting.'),
-          );
-        }
-        // Dispatch failure for the previous command state
-        dispatch({
-          type: 'COMMAND_FAILURE',
-          payload: new Error('Command cancelled due to new command starting.'),
-        });
-        currentCommandRef.current = null;
-      }
-
-      const config = state.activeDeviceConfig;
-      const deviceId = state.connectedDevice.id;
-      const commandTimeoutDuration =
-        options?.timeout ?? DEFAULT_COMMAND_TIMEOUT;
-
-      // Create promise with the internal response type
-      const deferredPromise = createDeferredPromise<InternalCommandResponse>();
-
-      // Update the command initialization to include receivedRawChunks
-      currentCommandRef.current = {
-        promise: deferredPromise,
-        timeoutId: null,
-        chunks: [], // Add this property
-        receivedRawChunks: [], // Keep this property
-        expectedReturnType: returnType,
-      };
-
-      dispatch({ type: 'SEND_COMMAND_START' });
-
-      const timeoutId = setTimeout(() => {
-        // Check if the command associated with this timeout is still the active one
-        if (
-          currentCommandRef.current?.promise === deferredPromise &&
-          currentCommandRef.current?.timeoutId === timeoutId // Ensure it's the correct timeout
-        ) {
-          const error = new Error(
-            `Command "${command}" timed out after ${commandTimeoutDuration}ms.`,
-          );
-          log.error(`[useBluetooth] ${error.message}`);
-          dispatch({ type: 'COMMAND_TIMEOUT' }); // Dispatch specific timeout action
-          deferredPromise.reject(error);
-          currentCommandRef.current = null; // Clear the ref on timeout
-        } else {
-          log.warn(
-            `[useBluetooth] Timeout fired for an old or already completed command "${command}". Ignoring.`,
-          );
-        }
-      }, commandTimeoutDuration);
-
-      // Store the timeoutId in the ref *after* creating it
-      if (currentCommandRef.current) {
-        currentCommandRef.current.timeoutId = timeoutId;
-      }
-
-      try {
-        const commandString = command + ELM327_COMMAND_TERMINATOR;
-        const commandBytes = Array.from(stringToBytes(commandString));
-
-        // Send command
-        log.info(
-          `[useBluetooth] Writing command "${command}" using ${config.writeType}...`,
-        );
-        if (config.writeType === 'Write') {
-          await BleManager.write(
-            deviceId,
-            config.serviceUUID,
-            config.writeCharacteristicUUID,
-            commandBytes,
-          );
-        } else {
-          await BleManager.writeWithoutResponse(
-            deviceId,
-            config.serviceUUID,
-            config.writeCharacteristicUUID,
-            commandBytes,
-          );
-        }
-
-        log.info(
-          `[useBluetooth] Command "${command}" written. Waiting for internal response promise...`,
-        );
-
-        // Await the internal response structure (resolved by handleIncomingData in Provider)
-        const internalResponse = await deferredPromise.promise; // Type is InternalCommandResponse
-
-        log.info(
-          `[useBluetooth] Internal response received for command "${command}". Processing based on returnType: ${returnType}`,
-        );
-
-        // Process internal response based on the requested return type
-        switch (returnType) {
-          case CommandReturnType.STRING:
-            // Use the utility function with the received chunks
-            return chunksToString({ chunks: internalResponse.chunks });
-
-          case CommandReturnType.BYTES:
-            // Use the utility function with the received chunks
-            return concatenateChunks({ chunks: internalResponse.chunks });
-
-          case CommandReturnType.CHUNKED: {
-            // Construct the public ChunkedResponse object directly from internal response
-            const chunkedResult: ChunkedResponse = {
-              chunks: internalResponse.chunks,
-              rawResponse: internalResponse.rawResponse,
-            };
-            return chunkedResult;
-          }
-
-          default:
-            // This case should be unreachable due to TypeScript checks on CommandReturnType
-            log.error(
-              `[useBluetooth] Unsupported return type encountered: ${returnType}`,
-            );
-            throw new Error(`Unsupported return type: ${returnType}`);
-        }
-      } catch (error) {
-        const formattedError = handleError(error);
-        log.error(
-          `[useBluetooth] Command "${command}" execution failed:`,
-          formattedError,
-        );
-
-        // Ensure cleanup happens only if this is still the active command
-        if (currentCommandRef.current?.promise === deferredPromise) {
-          if (currentCommandRef.current.timeoutId) {
-            clearTimeout(currentCommandRef.current.timeoutId);
-          }
-          // Reject the promise if it hasn't been settled yet (e.g., write failed before response)
-          // Check if the promise is still pending before rejecting
-          // Note: This check might be complex; relying on the catch block is usually sufficient
-          // deferredPromise.reject(formattedError); // Consider if needed or if catch is enough
-
-          currentCommandRef.current = null; // Clear the ref
-          // Dispatch failure only if the command wasn't already handled (e.g., by timeout)
-          // Check state? Or just dispatch? Let's dispatch for safety.
-          dispatch({ type: 'COMMAND_FAILURE', payload: formattedError });
-        } else {
-          log.warn(
-            `[useBluetooth] Error caught for command "${command}", but it's no longer the active command. Ignoring cleanup for this specific error instance.`,
-          );
-        }
-
-        throw formattedError; // Re-throw the error for the caller
-      } finally {
-        // Final cleanup check: Ensure timeout is cleared if the promise settled
-        // (either resolved successfully or rejected by an error other than timeout)
-        // This guards against race conditions where the promise settles *just* before the timeout fires.
-        if (currentCommandRef.current?.promise === deferredPromise) {
-          if (currentCommandRef.current.timeoutId) {
-            clearTimeout(currentCommandRef.current.timeoutId);
-            // Optionally nullify timeoutId in ref if command is considered complete here
-            // currentCommandRef.current.timeoutId = null;
-          }
-          // If the command succeeded, the ref should be cleared by the provider/handler
-          // If it failed here, it's cleared in the catch block.
-        }
-      }
+      // Call the separated execution logic from commandExecutor.ts
+      return executeCommandInternal(
+        command,
+        returnType,
+        options,
+        state.connectedDevice, // Pass connected device
+        state.activeDeviceConfig, // Pass active config
+        state.isAwaitingResponse, // Pass awaiting state
+        currentCommandRef, // Pass the ref
+        dispatch, // Pass dispatch
+      );
     },
     [
       state.connectedDevice,
       state.activeDeviceConfig,
       state.isAwaitingResponse,
       dispatch,
-      currentCommandRef, // Add currentCommandRef as dependency
+      currentCommandRef,
     ],
   );
-
-  // --- The sendCommand, sendCommandRaw, sendCommandRawChunked functions remain the same ---
-  // They already call executeCommand and handle its public return types correctly.
 
   const sendCommand = async (
     command: string,
     options?: { timeout?: number },
   ): Promise<string> => {
+    // Calls the executeCommand wrapper above
     const result = await executeCommand(
       command,
-      CommandReturnType.CHUNKED,
+      CommandReturnType.CHUNKED, // Request chunked internally
       options,
     );
 
     if (!isChunkedResponse(result)) {
-      throw new Error('Expected chunked response');
+      // This check might be redundant if executeCommandInternal guarantees type, but safe to keep
+      throw new Error(
+        'Internal error: Expected chunked response from executeCommand',
+      );
     }
 
-    return chunksToString(result);
+    return chunksToString(result); // Process the chunked response
   };
 
   const sendCommandRaw = async (
     command: string,
     options?: { timeout?: number },
   ): Promise<Uint8Array> => {
-    // Return type changed to Uint8Array
+    // Calls the executeCommand wrapper above
     const result = await executeCommand(
       command,
-      CommandReturnType.CHUNKED,
+      CommandReturnType.CHUNKED, // Request chunked internally
       options,
     );
 
     if (!isChunkedResponse(result)) {
-      throw new Error('Expected chunked response');
+      throw new Error(
+        'Internal error: Expected chunked response from executeCommand',
+      );
     }
 
-    // Use concatenateChunks to get the flat Uint8Array
-    return concatenateChunks(result);
+    return concatenateChunks(result); // Process the chunked response
   };
 
   const sendCommandRawChunked = async (
     command: string,
     options?: { timeout?: number },
   ): Promise<ChunkedResponse> => {
+    // Calls the executeCommand wrapper above
     const result = await executeCommand(
       command,
-      CommandReturnType.CHUNKED,
+      CommandReturnType.CHUNKED, // Request chunked internally
       options,
     );
 
     if (!isChunkedResponse(result)) {
-      throw new Error('Expected chunked response');
+      throw new Error(
+        'Internal error: Expected chunked response from executeCommand',
+      );
     }
 
-    // Return the full ChunkedResponse object as received
-    return result;
+    return result; // Return the chunked response directly
   };
 
   const setStreaming = useCallback(
@@ -1038,16 +867,18 @@ export const useBluetooth = (): UseBluetoothResult => {
   useEffect(() => {
     // Scan Promise
     if (scanPromiseRef.current && !state.isScanning) {
-      if (state.error && state.error.message.includes('Scan timed out')) {
-        scanPromiseRef.current.resolve();
-      } else if (state.error) {
-        scanPromiseRef.current.reject(handleStateError(state.error));
+      // Fix: Check error type before passing to handleStateError
+      const scanError = state.error ? handleStateError(state.error) : null;
+      if (scanError && scanError.message.includes('Scan timed out')) {
+        scanPromiseRef.current.resolve(); // Resolve on timeout
+      } else if (scanError) {
+        scanPromiseRef.current.reject(scanError);
       } else {
-        scanPromiseRef.current.resolve();
+        scanPromiseRef.current.resolve(); // Resolve on normal completion
       }
       scanPromiseRef.current = null;
     }
-  }, [state.isScanning, state.error]);
+  }, [state.isScanning, state.error]); // Keep state.error dependency
 
   // Add new useEffect for currentCommandRef dependency
   useEffect(() => {
@@ -1088,13 +919,14 @@ export const useBluetooth = (): UseBluetoothResult => {
     scanDevices,
     connectToDevice,
     disconnect,
-    sendCommand,
+    sendCommand, // Expose the simplified sendCommand
+    sendCommandRaw, // Expose the simplified sendCommandRaw
+    sendCommandRawChunked, // Expose the simplified sendCommandRawChunked
 
-    // TODO Functions (return placeholders)
+    // TODO Functions (return placeholders if still needed)
     requestBluetoothPermissions,
     promptEnableBluetooth,
-    sendCommandRaw,
-    sendCommandRawChunked,
     setStreaming,
+    // Note: executeCommand is no longer directly exposed, use the specific sendCommand* variants
   };
 };
