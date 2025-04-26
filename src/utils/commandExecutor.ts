@@ -74,9 +74,6 @@ export const executeCommandInternal = async (
   // Clear existing command with proper cleanup
   if (currentCommandRef.current) {
     log.warn('[commandExecutor] Stale command ref found - clearing.');
-    if (currentCommandRef.current.timeoutId) {
-      clearTimeout(currentCommandRef.current.timeoutId);
-    }
     if (currentCommandRef.current.promise) {
       currentCommandRef.current.promise.reject(
         new Error('Command cancelled due to new command starting.'),
@@ -90,13 +87,11 @@ export const executeCommandInternal = async (
   }
 
   const deviceId = connectedDevice.id;
-  const commandTimeoutDuration = options?.timeout ?? 0;
 
   const deferredPromise = createDeferredPromise<InternalCommandResponse>();
 
   currentCommandRef.current = {
     promise: deferredPromise,
-    timeoutId: null,
     receivedRawChunks: [], // Keep original initialization for now
     receivedRawChunksAll: [[]], // Initialize new array with one empty response array
     currentResponseIndex: 0, // Start index for receivedRawChunksAll
@@ -104,29 +99,6 @@ export const executeCommandInternal = async (
   };
 
   dispatch({ type: 'SEND_COMMAND_START' });
-
-  const timeoutId = setTimeout(() => {
-    if (
-      currentCommandRef.current?.promise === deferredPromise &&
-      currentCommandRef.current?.timeoutId === timeoutId
-    ) {
-      const error = new Error(
-        `Command "${command}" timed out after ${commandTimeoutDuration}ms.`,
-      );
-      log.error(`[commandExecutor] ${error.message}`);
-      dispatch({ type: 'COMMAND_TIMEOUT' });
-      deferredPromise.reject(error);
-      currentCommandRef.current = null;
-    } else {
-      log.warn(
-        `[commandExecutor] Timeout fired for an old or already completed command "${command}". Ignoring.`,
-      );
-    }
-  }, commandTimeoutDuration);
-
-  if (currentCommandRef.current) {
-    currentCommandRef.current.timeoutId = timeoutId;
-  }
 
   try {
     const commandString = command + ELM327_COMMAND_TERMINATOR;
@@ -165,10 +137,6 @@ export const executeCommandInternal = async (
       `[commandExecutor] Internal response received for command "${command}". Processing based on returnType: ${returnType}`,
     );
     dispatch({ type: 'COMMAND_SUCCESS' }); // Dispatch success
-    if (currentCommandRef.current?.timeoutId === timeoutId) {
-      clearTimeout(timeoutId); // Clear the specific timeout for this command
-      currentCommandRef.current.timeoutId = null;
-    }
     currentCommandRef.current = null; // Clear the ref on success
 
     // --- Response processing needs adjustment later ---
@@ -202,9 +170,6 @@ export const executeCommandInternal = async (
     );
 
     if (currentCommandRef.current?.promise === deferredPromise) {
-      if (currentCommandRef.current.timeoutId) {
-        clearTimeout(currentCommandRef.current.timeoutId);
-      }
       currentCommandRef.current = null;
       dispatch({ type: 'COMMAND_FAILURE', payload: formattedError });
     } else {

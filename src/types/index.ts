@@ -112,8 +112,6 @@ export interface InternalCommandResponse {
 export interface CommandExecutionState {
   /** The deferred promise associated with this command execution. */
   promise: DeferredPromise<InternalCommandResponse>; // Resolves with the internal structure
-  /** The timeout ID for this command. */
-  timeoutId: NodeJS.Timeout | null;
   /**
    * Accumulates raw byte arrays (number[]) for the *first* or *primary* response.
    * (May be repurposed or removed later).

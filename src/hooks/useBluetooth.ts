@@ -880,23 +880,6 @@ export const useBluetooth = (): UseBluetoothResult => {
     }
   }, [state.isScanning, state.error]); // Keep state.error dependency
 
-  // Add new useEffect for currentCommandRef dependency
-  useEffect(() => {
-    // Handle currentCommandRef changes if needed
-    // Cleanup function to clear timeout if component unmounts or ref changes mid-command
-    return () => {
-      if (currentCommandRef.current?.timeoutId) {
-        log.debug(
-          '[useBluetooth] Cleanup effect: Clearing timeout for potentially active command.',
-        );
-        clearTimeout(currentCommandRef.current.timeoutId);
-        // Optionally reject the promise here if unmounting means cancellation
-        // currentCommandRef.current?.promise?.reject(new Error("Component unmounted during command execution"));
-        // currentCommandRef.current = null; // Consider if resetting ref is needed here
-      }
-    };
-  }, [currentCommandRef]); // Dependency on the ref wrapper itself
-
   // --- Effect to process incoming data for sendCommand ---
   // NOTE: The useEffect hook previously here for handling incoming data and decoding
   // has been removed. This logic is now centralized within the BluetoothProvider's

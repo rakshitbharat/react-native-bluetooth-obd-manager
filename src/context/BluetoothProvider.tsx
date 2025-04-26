@@ -346,9 +346,6 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
               currentCommandRef.current.promise?.reject(
                 new Error('Device disconnected during command.'),
               );
-              if (currentCommandRef.current.timeoutId) {
-                clearTimeout(currentCommandRef.current.timeoutId);
-              }
               // Clear received chunks on disconnect if command was active
               if (currentCommandRef.current.receivedRawChunks) {
                 currentCommandRef.current.receivedRawChunks = [];
