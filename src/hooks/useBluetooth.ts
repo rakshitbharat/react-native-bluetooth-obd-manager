@@ -637,40 +637,44 @@ export const useBluetooth = (): UseBluetoothResult => {
   // --- Command Functions ---
 
   // Helper function to add timeout to command execution
-  const executeCommandWithTimeout = async <T>(
-    commandPromise: Promise<T>,
-    timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS, // Keep default
-  ): Promise<T> => {
-    let timeoutId: NodeJS.Timeout | null = null;
+  // Wrap in useCallback to prevent it from changing on every render
+  const executeCommandWithTimeout = useCallback(
+    async <T>(
+      commandPromise: Promise<T>,
+      timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS,
+    ): Promise<T> => {
+      let timeoutId: NodeJS.Timeout | null = null;
 
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => {
-        log.warn(`[useBluetooth] Command timed out after ${timeoutMs}ms.`);
-        // Reject the promise associated with the current command
-        if (currentCommandRef.current?.promise) {
-          const timeoutError = new Error(
-            `Command timed out after ${timeoutMs}ms`,
-          );
-          currentCommandRef.current.promise.reject(timeoutError);
-          // Optionally dispatch failure here as well, though executeCommandInternal might handle it
-          dispatch({ type: 'COMMAND_FAILURE', payload: timeoutError });
-          currentCommandRef.current = null; // Clear ref on timeout
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          log.warn(`[useBluetooth] Command timed out after ${timeoutMs}ms.`);
+          // Reject the promise associated with the current command
+          if (currentCommandRef.current?.promise) {
+            const timeoutError = new Error(
+              `Command timed out after ${timeoutMs}ms`,
+            );
+            currentCommandRef.current.promise.reject(timeoutError);
+            // Optionally dispatch failure here as well, though executeCommandInternal might handle it
+            dispatch({ type: 'COMMAND_FAILURE', payload: timeoutError });
+            currentCommandRef.current = null; // Clear ref on timeout
+          }
+          // Also reject the race promise
+          reject(new Error(`Command timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      });
+
+      try {
+        // Race the actual command against the timeout
+        return await Promise.race([commandPromise, timeoutPromise]);
+      } finally {
+        // Clear the timeout timer if the command completes or fails before the timeout
+        if (timeoutId) {
+          clearTimeout(timeoutId);
         }
-        // Also reject the race promise
-        reject(new Error(`Command timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-    });
-
-    try {
-      // Race the actual command against the timeout
-      return await Promise.race([commandPromise, timeoutPromise]);
-    } finally {
-      // Clear the timeout timer if the command completes or fails before the timeout
-      if (timeoutId) {
-        clearTimeout(timeoutId);
       }
-    }
-  };
+    },
+    [dispatch, currentCommandRef],
+  ); // Add dependencies used inside: dispatch, currentCommandRef
 
   // Replace the old executeCommand implementation with a wrapper calling the internal one
   const executeCommand = useCallback(
@@ -706,6 +710,7 @@ export const useBluetooth = (): UseBluetoothResult => {
       state.isAwaitingResponse,
       dispatch,
       currentCommandRef,
+      executeCommandWithTimeout, // Add missing dependency
     ],
   );
 

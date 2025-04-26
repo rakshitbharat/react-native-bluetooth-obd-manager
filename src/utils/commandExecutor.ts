@@ -67,36 +67,48 @@ export const executeCommandInternal = async (
   currentCommandRef: React.MutableRefObject<CommandExecutionState | null>,
   dispatch: Dispatch<BluetoothAction>, // Use specific type instead of any
 ): Promise<string | Uint8Array | ChunkedResponse> => {
-  if (isAwaitingResponse) {
+  if (isAwaitingResponse && currentCommandRef.current) {
+    // If truly awaiting (SEND_COMMAND_START dispatched but no COMMAND_SUCCESS/FAILURE yet)
+    // and the ref exists, throw the error.
     throw new Error('Another command is already in progress.');
   }
 
-  // Clear existing command with proper cleanup
+  // Create the deferred promise for this specific command execution
+  const deferredPromise = createDeferredPromise<InternalCommandResponse>();
+  const deviceId = connectedDevice.id; // Get deviceId from the parameter
+
+  // Clear existing command ref *state* or create a new one
   if (currentCommandRef.current) {
-    log.warn('[commandExecutor] Stale command ref found - clearing.');
+    log.warn(
+      '[commandExecutor] Stale command ref found - updating promise and resetting index.',
+    );
+    // Reject the previous promise if it exists and hasn't been resolved/rejected
     if (currentCommandRef.current.promise) {
+      // Check if the promise is still pending before rejecting
+      // (This check is conceptual; promises don't have a standard 'isPending' state)
+      // We rely on the fact that if it's still the active ref's promise, it's likely pending.
       currentCommandRef.current.promise.reject(
         new Error('Command cancelled due to new command starting.'),
       );
     }
-    dispatch({
-      type: 'COMMAND_FAILURE',
-      payload: new Error('Command cancelled due to new command starting.'),
-    });
-    currentCommandRef.current = null;
+
+    // Update the existing ref: Replace promise, reset index, set new return type.
+    // Crucially, DO NOT touch receivedRawChunksAll here.
+    currentCommandRef.current.promise = deferredPromise;
+    currentCommandRef.current.currentResponseIndex = 0; // Reset index for the new command
+    currentCommandRef.current.expectedReturnType = returnType;
+  } else {
+    // If no command ref exists, create the full state object
+    currentCommandRef.current = {
+      promise: deferredPromise,
+      // Initialize receivedRawChunksAll ONLY if the ref was initially null
+      receivedRawChunksAll: [[]], // Start with one empty response array
+      currentResponseIndex: 0,
+      expectedReturnType: returnType,
+    };
   }
 
-  const deviceId = connectedDevice.id;
-
-  const deferredPromise = createDeferredPromise<InternalCommandResponse>();
-
-  currentCommandRef.current = {
-    promise: deferredPromise,
-    receivedRawChunksAll: [[]], // Initialize new array with one empty response array
-    currentResponseIndex: 0, // Start index for receivedRawChunksAll
-    expectedReturnType: returnType,
-  };
-
+  // Dispatch START *after* setting up the ref
   dispatch({ type: 'SEND_COMMAND_START' });
 
   try {
@@ -104,18 +116,18 @@ export const executeCommandInternal = async (
     const commandBytes = Array.from(stringToBytes(commandString));
 
     log.info(
-      `[commandExecutor] Writing command "${command}" using ${activeDeviceConfig.writeType}...`,
+      `[commandExecutor] Writing command "${command}" to ${deviceId} using ${activeDeviceConfig.writeType}...`,
     );
     if (activeDeviceConfig.writeType === 'Write') {
       await BleManager.write(
-        deviceId,
+        deviceId, // Use variable
         activeDeviceConfig.serviceUUID,
         activeDeviceConfig.writeCharacteristicUUID,
         commandBytes,
       );
     } else {
       await BleManager.writeWithoutResponse(
-        deviceId,
+        deviceId, // Use variable
         activeDeviceConfig.serviceUUID,
         activeDeviceConfig.writeCharacteristicUUID,
         commandBytes,
@@ -126,40 +138,51 @@ export const executeCommandInternal = async (
       `[commandExecutor] Command "${command}" written. Waiting for internal response promise...`,
     );
 
-    // --- Promise resolution logic needs adjustment later ---
-    // This part will need to change based on how we decide a command is fully complete
-    // when multiple responses might be involved.
+    // Wait for the promise associated *with this specific execution*
     const internalResponse = await deferredPromise.promise;
 
     // Command succeeded
     log.info(
       `[commandExecutor] Internal response received for command "${command}". Processing based on returnType: ${returnType}`,
     );
-    dispatch({ type: 'COMMAND_SUCCESS' }); // Dispatch success
-    currentCommandRef.current = null; // Clear the ref on success
 
-    // --- Response processing needs adjustment later ---
-    // This needs to handle the receivedRawChunks[responseIndex] structure
+    // Check if the current ref still points to *this* command's promise before clearing
+    if (currentCommandRef.current?.promise === deferredPromise) {
+      dispatch({ type: 'COMMAND_SUCCESS' }); // Dispatch success
+      currentCommandRef.current = null; // Clear the ref on success
+    } else {
+      log.warn(
+        `[commandExecutor] Command "${command}" succeeded, but a newer command has already started. Not clearing ref or dispatching success for this instance.`,
+      );
+      // Do not clear the ref or dispatch success, as it belongs to the newer command now.
+    }
+
+    // Process the response based on the resolved internalResponse
     switch (returnType) {
       case ReturnTypeEnum.STRING:
-        // TODO: Adjust to process receivedRawChunks[?] based on completion logic
+        // Use the chunks from the resolved promise
         return chunksToString({ chunks: internalResponse.chunks });
       case ReturnTypeEnum.BYTES:
-        // TODO: Adjust to process receivedRawChunks[?] based on completion logic
+        // Use the chunks from the resolved promise
         return concatenateChunks({ chunks: internalResponse.chunks });
       case ReturnTypeEnum.CHUNKED: {
-        // TODO: Adjust to process receivedRawChunks[?] based on completion logic
+        // Add braces to scope the declaration
+        // Use both chunks and rawResponse from the resolved promise
         const chunkedResult: ChunkedResponse = {
           chunks: internalResponse.chunks,
           rawResponse: internalResponse.rawResponse,
         };
         return chunkedResult;
       }
-      default:
+      default: {
+        // Add braces for consistency and future-proofing
+        // This case should ideally be unreachable if types are correct
+        const exhaustiveCheck: never = returnType;
         log.error(
-          `[commandExecutor] Unsupported return type encountered: ${returnType}`,
+          `[commandExecutor] Unsupported return type encountered: ${exhaustiveCheck}`,
         );
-        throw new Error(`Unsupported return type: ${returnType}`);
+        throw new Error(`Unsupported return type: ${exhaustiveCheck}`);
+      }
     }
   } catch (error) {
     const formattedError = handleError(error);
@@ -168,14 +191,17 @@ export const executeCommandInternal = async (
       formattedError,
     );
 
+    // Check if the error belongs to the currently active command in the ref
     if (currentCommandRef.current?.promise === deferredPromise) {
-      currentCommandRef.current = null;
       dispatch({ type: 'COMMAND_FAILURE', payload: formattedError });
+      currentCommandRef.current = null; // Clear ref on failure of the active command
     } else {
       log.warn(
-        `[commandExecutor] Error caught for command "${command}", but it's no longer the active command. Ignoring cleanup for this specific error instance.`,
+        `[commandExecutor] Error caught for command "${command}", but it's no longer the active command. Ignoring cleanup/dispatch for this specific error instance.`,
       );
+      // Do not clear the ref or dispatch failure, as it belongs to the newer command now.
     }
+    // Always re-throw the error so the caller (executeCommandWithTimeout) catches it
     throw formattedError;
   }
 };
