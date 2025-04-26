@@ -98,8 +98,9 @@ export const executeCommandInternal = async (
   currentCommandRef.current = {
     promise: deferredPromise,
     timeoutId: null,
-    // Remove the incorrect 'chunks' property
-    receivedRawChunks: [],
+    receivedRawChunks: [], // Keep original initialization for now
+    receivedRawChunksAll: [[]], // Initialize new array with one empty response array
+    currentResponseIndex: 0, // Start index for receivedRawChunksAll
     expectedReturnType: returnType,
   };
 
@@ -155,18 +156,26 @@ export const executeCommandInternal = async (
       `[commandExecutor] Command "${command}" written. Waiting for internal response promise...`,
     );
 
+    // --- Promise resolution logic needs adjustment later ---
+    // This part will need to change based on how we decide a command is fully complete
+    // when multiple responses might be involved.
     const internalResponse = await deferredPromise.promise;
 
     log.info(
       `[commandExecutor] Internal response received for command "${command}". Processing based on returnType: ${returnType}`,
     );
 
+    // --- Response processing needs adjustment later ---
+    // This needs to handle the receivedRawChunks[responseIndex] structure
     switch (returnType) {
       case ReturnTypeEnum.STRING:
+        // TODO: Adjust to process receivedRawChunks[?] based on completion logic
         return chunksToString({ chunks: internalResponse.chunks });
       case ReturnTypeEnum.BYTES:
+        // TODO: Adjust to process receivedRawChunks[?] based on completion logic
         return concatenateChunks({ chunks: internalResponse.chunks });
       case ReturnTypeEnum.CHUNKED: {
+        // TODO: Adjust to process receivedRawChunks[?] based on completion logic
         const chunkedResult: ChunkedResponse = {
           chunks: internalResponse.chunks,
           rawResponse: internalResponse.rawResponse,

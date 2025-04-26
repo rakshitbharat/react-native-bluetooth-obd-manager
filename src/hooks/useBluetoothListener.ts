@@ -4,10 +4,10 @@ import type { EmitterSubscription } from 'react-native';
 import type {
   BleManagerDidUpdateValueForCharacteristicEvent,
   CommandExecutionState,
-  InternalCommandResponse,
   BluetoothAction,
 } from '../types';
 import { log } from '../utils/logger';
+import { ELM327_COMMAND_TERMINATOR_ASCII } from '../constants';
 
 const BleManagerModule = NativeModules.BleManager;
 const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
@@ -38,9 +38,11 @@ const handleError = (error: unknown): Error => {
   return new Error(String(error));
 };
 
+const MAX_RETAINED_RESPONSES = 3;
+
 /**
  * Custom hook to manage the BleManagerDidUpdateValueForCharacteristic listener
- * and handle incoming data for command responses.
+ * and accumulate incoming data chunks for command responses.
  *
  * @internal - Intended for use within BluetoothProvider.
  *
@@ -63,44 +65,76 @@ export const useBluetoothListener = (
         try {
           const commandState = currentCommandRef.current;
 
-          // Store raw number arrays
-          // Ensure receivedRawChunks exists on the type!
+          // --- Keep original receivedRawChunks logic for now ---
           if (!commandState.receivedRawChunks) {
             commandState.receivedRawChunks = [];
           }
           commandState.receivedRawChunks.push([...value]);
+          log.debug(
+            '[useBluetoothListener] Appended chunk to receivedRawChunks. Total chunks:',
+            commandState.receivedRawChunks.length,
+          );
 
-          // Check if the terminator character ('>', ASCII 62 or 0x3E) is present
-          if (value.includes(62)) {
-            // 62 is the ASCII code for '>'
-            const { promise } = commandState;
+          // --- New logic for receivedRawChunksAll ---
+          const currentIndex = commandState.currentResponseIndex;
 
-            // Prepare the internal response object
-            const internalResponse: InternalCommandResponse = {
-              // Map receivedRawChunks to Uint8Array
-              chunks: commandState.receivedRawChunks.map(
-                chunk => new Uint8Array(chunk),
-              ),
-              rawResponse: commandState.receivedRawChunks, // Keep the raw number[][]
-            };
+          // Ensure the array for the current response index exists in receivedRawChunksAll
+          if (!commandState.receivedRawChunksAll[currentIndex]) {
+            log.warn(
+              `[useBluetoothListener] Response array at index ${currentIndex} in receivedRawChunksAll not initialized. Initializing.`,
+            );
+            commandState.receivedRawChunksAll[currentIndex] = [];
+          }
 
-            // Clear the current command state *before* resolving
-            currentCommandRef.current = null;
-            dispatch({ type: 'COMMAND_SUCCESS' });
+          // Append the new chunk to the current response's chunk array in receivedRawChunksAll
+          commandState.receivedRawChunksAll[currentIndex].push([...value]);
+          log.debug(
+            `[useBluetoothListener] Appended chunk to receivedRawChunksAll index ${currentIndex}. Total chunks for this response: ${commandState.receivedRawChunksAll[currentIndex].length}`,
+          );
 
+          // Check if the terminator character ('>', ASCII 62) is present in the current chunk
+          if (value.includes(ELM327_COMMAND_TERMINATOR_ASCII)) {
             log.info(
-              '[useBluetoothListener] Command finished. Resolving internal promise with:',
-              JSON.stringify(internalResponse),
+              `[useBluetoothListener] Terminator found in chunk for response index ${currentIndex}.`,
             );
 
-            // Resolve the promise with the internal structure
-            promise.resolve(internalResponse);
+            // Increment the index to prepare for the next potential response
+            let nextIndex = commandState.currentResponseIndex + 1;
+
+            // Initialize the array for the *next* response index in receivedRawChunksAll
+            commandState.receivedRawChunksAll[nextIndex] = [];
+
+            // --- Enforce the limit ---
+            if (
+              commandState.receivedRawChunksAll.length > MAX_RETAINED_RESPONSES
+            ) {
+              log.info(
+                `[useBluetoothListener] Exceeded max responses (${MAX_RETAINED_RESPONSES}). Removing oldest.`,
+              );
+              // Keep only the last MAX_RETAINED_RESPONSES elements
+              commandState.receivedRawChunksAll =
+                commandState.receivedRawChunksAll.slice(
+                  -MAX_RETAINED_RESPONSES,
+                );
+              // Adjust the next index to be the last index of the sliced array
+              nextIndex = commandState.receivedRawChunksAll.length - 1;
+            }
+
+            // Update the current response index
+            commandState.currentResponseIndex = nextIndex;
+
+            log.info(
+              `[useBluetoothListener] Updated response index to ${commandState.currentResponseIndex}. Total responses stored: ${commandState.receivedRawChunksAll.length}.`,
+            );
+
+            // --- Promise resolution logic is still deferred ---
           }
         } catch (error) {
           log.error(
             '[useBluetoothListener] Error processing incoming data:',
             error,
           );
+          // Keep error handling for the promise if an unexpected error occurs here
           if (currentCommandRef.current?.promise) {
             const formattedError = handleError(error);
             currentCommandRef.current.promise.reject(formattedError);

@@ -106,7 +106,7 @@ export interface InternalCommandResponse {
 
 /**
  * Represents the internal state tracked while a single command is executing
- * and awaiting its complete response.
+ * and awaiting its complete response(s).
  * @internal
  */
 export interface CommandExecutionState {
@@ -114,8 +114,18 @@ export interface CommandExecutionState {
   promise: DeferredPromise<InternalCommandResponse>; // Resolves with the internal structure
   /** The timeout ID for this command. */
   timeoutId: NodeJS.Timeout | null;
-  /** Accumulates the raw byte arrays (number[]) received for this command. */
+  /**
+   * Accumulates raw byte arrays (number[]) for the *first* or *primary* response.
+   * (May be repurposed or removed later).
+   */
   receivedRawChunks: number[][];
+  /**
+   * Accumulates *all* raw byte arrays (number[][]). Each inner array
+   * represents chunks for a single response, indexed by terminator detection.
+   */
+  receivedRawChunksAll: number[][][]; // Array of responses, each response is an array of chunks
+  /** The index of the response currently being populated in receivedRawChunksAll. */
+  currentResponseIndex: number;
   /** The expected format for the final resolved value of the public executeCommand promise. */
   expectedReturnType: 'string' | 'bytes' | 'chunked';
 }
