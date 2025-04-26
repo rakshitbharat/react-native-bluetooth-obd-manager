@@ -5,7 +5,7 @@ import {
   getShortUUID, // Import the new helper
 } from '../utils/byteUtils';
 import {
-  executeCommandInternal,
+  executeCommandInternal, // Import executeCommandInternal
   createDeferredPromise,
 } from '../utils/commandExecutor'; // Import executeCommandInternal and createDeferredPromise
 import type { ChunkedResponse, BleError as BleErrorType } from '../types'; // Import necessary types, rename BleError to avoid conflict
@@ -636,46 +636,6 @@ export const useBluetooth = (): UseBluetoothResult => {
 
   // --- Command Functions ---
 
-  // Helper function to add timeout to command execution
-  // Wrap in useCallback to prevent it from changing on every render
-  const executeCommandWithTimeout = useCallback(
-    async <T>(
-      commandPromise: Promise<T>,
-      timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS,
-    ): Promise<T> => {
-      let timeoutId: NodeJS.Timeout | null = null;
-
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          log.warn(`[useBluetooth] Command timed out after ${timeoutMs}ms.`);
-          // Reject the promise associated with the current command
-          if (currentCommandRef.current?.promise) {
-            const timeoutError = new Error(
-              `Command timed out after ${timeoutMs}ms`,
-            );
-            currentCommandRef.current.promise.reject(timeoutError);
-            // Optionally dispatch failure here as well, though executeCommandInternal might handle it
-            dispatch({ type: 'COMMAND_FAILURE', payload: timeoutError });
-            currentCommandRef.current = null; // Clear ref on timeout
-          }
-          // Also reject the race promise
-          reject(new Error(`Command timed out after ${timeoutMs}ms`));
-        }, timeoutMs);
-      });
-
-      try {
-        // Race the actual command against the timeout
-        return await Promise.race([commandPromise, timeoutPromise]);
-      } finally {
-        // Clear the timeout timer if the command completes or fails before the timeout
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-      }
-    },
-    [dispatch, currentCommandRef],
-  ); // Add dependencies used inside: dispatch, currentCommandRef
-
   // Replace the old executeCommand implementation with a wrapper calling the internal one
   const executeCommand = useCallback(
     async (
@@ -686,22 +646,19 @@ export const useBluetooth = (): UseBluetoothResult => {
       if (!state.connectedDevice || !state.activeDeviceConfig) {
         throw new Error('Not connected to a device.');
       }
-      // Call the separated execution logic from commandExecutor.ts
-      // Wrap the internal call with the timeout helper
       // Use provided timeout or default
       const timeoutDuration = options?.timeout ?? DEFAULT_COMMAND_TIMEOUT_MS;
-      return executeCommandWithTimeout(
-        executeCommandInternal(
-          command,
-          returnType,
-          // options, // No longer pass options down to internal
-          state.connectedDevice, // Pass connected device
-          state.activeDeviceConfig, // Pass active config
-          state.isAwaitingResponse, // Pass awaiting state
-          currentCommandRef, // Pass the ref
-          dispatch, // Pass dispatch
-        ),
-        timeoutDuration, // Use the determined timeout duration
+
+      // Call the separated execution logic from commandExecutor.ts directly
+      return executeCommandInternal(
+        command,
+        returnType,
+        state.connectedDevice, // Pass connected device
+        state.activeDeviceConfig, // Pass active config
+        state.isAwaitingResponse, // Pass awaiting state
+        currentCommandRef, // Pass the ref
+        dispatch, // Pass dispatch
+        timeoutDuration, // Pass the timeout duration
       );
     },
     [
@@ -710,7 +667,7 @@ export const useBluetooth = (): UseBluetoothResult => {
       state.isAwaitingResponse,
       dispatch,
       currentCommandRef,
-      executeCommandWithTimeout, // Add missing dependency
+      // REMOVED executeCommandWithTimeout from dependencies
     ],
   );
 

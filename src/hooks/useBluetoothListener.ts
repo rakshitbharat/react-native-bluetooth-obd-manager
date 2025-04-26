@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react'; // Import useCallback
 import { NativeEventEmitter, NativeModules } from 'react-native';
 import type { EmitterSubscription } from 'react-native';
 import type {
@@ -55,7 +55,9 @@ export const useBluetoothListener = (
   currentCommandRef: React.MutableRefObject<CommandExecutionState | null>,
   dispatch: React.Dispatch<BluetoothAction>,
 ): void => {
-  const handleIncomingData = (data: BleManagerDidUpdateValueForCharacteristicEvent) => {
+  // Wrap handleIncomingData in useCallback
+  const handleIncomingData = useCallback(
+    (data: BleManagerDidUpdateValueForCharacteristicEvent) => {
       const value = data.value; // This is number[]
       log.info(
         '[useBluetoothListener] Received data chunk:',
@@ -91,14 +93,15 @@ export const useBluetoothListener = (
             if (commandState.promise) {
               // Prepare the response object
               // Get the flat array of all raw bytes for the *completed* response index
-              const completedRawBytes: number[] = commandState.receivedRawChunksAll[currentIndex];
+              const completedRawBytes: number[] =
+                commandState.receivedRawChunksAll[currentIndex];
 
               // Create the InternalCommandResponse based on the flat array structure
               const internalResponse: InternalCommandResponse = {
-                 // Treat the flat array as the bytes of a single chunk
-                 chunks: [bytesToUint8Array(completedRawBytes)], // Array containing one Uint8Array
-                 // Treat the flat array as the raw data of a single chunk
-                 rawResponse: [completedRawBytes], // Array containing one number[]
+                // Treat the flat array as the bytes of a single chunk
+                chunks: [bytesToUint8Array(completedRawBytes)], // Array containing one Uint8Array
+                // Treat the flat array as the raw data of a single chunk
+                rawResponse: [completedRawBytes], // Array containing one number[]
               };
 
               commandState.promise.resolve(internalResponse);
@@ -111,15 +114,15 @@ export const useBluetoothListener = (
             }
 
             // --- Index Management (Keep after potential resolution) ---
-            // Increment the index to prepare for the next potential response (less relevant if commands don't overlap responses)
+            // Increment the index to prepare for the next response (less relevant if commands don't overlap responses)
             let nextIndex = commandState.currentResponseIndex + 1;
 
             // Initialize the array for the *next* response index
             // Check bounds before initializing
-             if (nextIndex < MAX_RETAINED_RESPONSES) { // Only initialize if within bounds initially
-               commandState.receivedRawChunksAll[nextIndex] = [];
-             }
-
+            if (nextIndex < MAX_RETAINED_RESPONSES) {
+              // Only initialize if within bounds initially
+              commandState.receivedRawChunksAll[nextIndex] = [];
+            }
 
             // --- Enforce the limit ---
             if (
@@ -134,20 +137,21 @@ export const useBluetoothListener = (
                 );
               // Adjust the next index relative to the *new* array length
               nextIndex = commandState.receivedRawChunksAll.length; // Point to the position *after* the last element
-               // Ensure the slot for the *next* command exists after slicing
-               if (nextIndex < MAX_RETAINED_RESPONSES && !commandState.receivedRawChunksAll[nextIndex]) {
-                 commandState.receivedRawChunksAll[nextIndex] = [];
-               }
+              // Ensure the slot for the *next* command exists after slicing
+              if (
+                nextIndex < MAX_RETAINED_RESPONSES &&
+                !commandState.receivedRawChunksAll[nextIndex]
+              ) {
+                commandState.receivedRawChunksAll[nextIndex] = [];
+              }
             }
 
             // Update the current response index *after* resolving the previous one
             commandState.currentResponseIndex = nextIndex;
 
-
             log.info(
               `[useBluetoothListener] Updated response index to ${commandState.currentResponseIndex}. Total responses stored: ${commandState.receivedRawChunksAll.length}.`,
             );
-
           }
         } catch (error) {
           log.error(
@@ -168,7 +172,9 @@ export const useBluetoothListener = (
           value,
         );
       }
-    };
+    },
+    [currentCommandRef, dispatch], // Add dependencies for useCallback
+  );
 
   // Effect to setup and cleanup the listener
   useEffect(() => {
@@ -187,5 +193,5 @@ export const useBluetoothListener = (
       );
       dataListener.remove();
     };
-  }, []);
+  }, [handleIncomingData]); // Dependency array remains the same
 };

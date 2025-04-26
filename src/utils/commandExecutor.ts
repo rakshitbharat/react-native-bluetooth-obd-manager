@@ -55,6 +55,7 @@ const handleError = (error: unknown): Error => {
  * Executes a command on the connected Bluetooth device.
  * This function encapsulates the logic for sending a command, managing timeouts,
  * and handling the response promise lifecycle via the currentCommandRef.
+ * On timeout, it resolves with any data collected so far.
  *
  * @internal - Intended for use by useBluetooth hook.
  */
@@ -66,6 +67,7 @@ export const executeCommandInternal = async (
   isAwaitingResponse: boolean,
   currentCommandRef: React.MutableRefObject<CommandExecutionState | null>,
   dispatch: Dispatch<BluetoothAction>, // Use specific type instead of any
+  timeoutDuration: number, // Add timeout duration parameter
 ): Promise<string | Uint8Array | ChunkedResponse> => {
   if (isAwaitingResponse && currentCommandRef.current) {
     // If truly awaiting (SEND_COMMAND_START dispatched but no COMMAND_SUCCESS/FAILURE yet)
@@ -76,6 +78,7 @@ export const executeCommandInternal = async (
   // Create the deferred promise for this specific command execution
   const deferredPromise = createDeferredPromise<InternalCommandResponse>();
   const deviceId = connectedDevice.id; // Get deviceId from the parameter
+  let timeoutId: NodeJS.Timeout | null = null; // Timeout ID
 
   // Clear existing command ref *state* or create a new one
   if (currentCommandRef.current) {
@@ -108,6 +111,9 @@ export const executeCommandInternal = async (
     };
   }
 
+  // Keep a reference to the promise associated with *this* execution
+  const thisExecutionPromise = currentCommandRef.current.promise;
+
   // Dispatch START *after* setting up the ref
   dispatch({ type: 'SEND_COMMAND_START' });
 
@@ -135,24 +141,67 @@ export const executeCommandInternal = async (
     }
 
     log.info(
-      `[commandExecutor] Command "${command}" written. Waiting for internal response promise...`,
+      `[commandExecutor] Command "${command}" written. Waiting for internal response promise (timeout: ${timeoutDuration}ms)...`,
     );
 
-    // Wait for the promise associated *with this specific execution*
-    const internalResponse = await deferredPromise.promise;
+    // Start timeout timer
+    timeoutId = setTimeout(() => {
+      timeoutId = null; // Clear the stored ID
+      // Check if the command associated with this timeout is still the active one
+      if (currentCommandRef.current?.promise === thisExecutionPromise) {
+        log.warn(
+          `[commandExecutor] Command "${command}" timed out after ${timeoutDuration}ms. Resolving with collected data.`,
+        );
 
-    // Command succeeded
+        // Get whatever raw numbers were received before timeout
+        const collectedRawNumbers: number[] =
+          currentCommandRef.current.receivedRawChunksAll[
+            currentCommandRef.current.currentResponseIndex
+          ] ?? []; // Default to empty array if undefined
+
+        // Construct a partial response matching InternalCommandResponse type
+        const partialResponse: InternalCommandResponse = {
+          // Convert the collected numbers to a Uint8Array and wrap in an array
+          chunks: [Uint8Array.from(collectedRawNumbers)],
+          // Wrap the collected numbers in an array to match number[][]
+          rawResponse: [collectedRawNumbers],
+        };
+
+        // Resolve the promise with the partial data
+        thisExecutionPromise.resolve(partialResponse);
+        // Note: We don't dispatch COMMAND_FAILURE here. The resolution will
+        // trigger the success path below, which dispatches COMMAND_SUCCESS.
+        // We also don't clear the ref here; the success path will handle it.
+      } else {
+        log.warn(
+          `[commandExecutor] Timeout fired for command "${command}", but a newer command is active or it already completed. Ignoring timeout resolution.`,
+        );
+      }
+    }, timeoutDuration);
+
+    // Wait for the promise associated *with this specific execution*
+    // This promise might be resolved by incoming data OR by the timeout handler above
+    const internalResponse = await thisExecutionPromise.promise;
+
+    // If the timeout was active, clear it now that the promise is resolved
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+
+    // Command completed (either fully or via timeout resolution)
     log.info(
-      `[commandExecutor] Internal response received for command "${command}". Processing based on returnType: ${returnType}`,
+      `[commandExecutor] Internal response promise resolved for command "${command}". Processing based on returnType: ${returnType}`,
+      internalResponse, // Log the response (could be partial on timeout)
     );
 
     // Check if the current ref still points to *this* command's promise before clearing
-    if (currentCommandRef.current?.promise === deferredPromise) {
-      dispatch({ type: 'COMMAND_SUCCESS' }); // Dispatch success
-      currentCommandRef.current = null; // Clear the ref on success
+    if (currentCommandRef.current?.promise === thisExecutionPromise) {
+      dispatch({ type: 'COMMAND_SUCCESS' }); // Dispatch success (even on timeout resolution)
+      currentCommandRef.current = null; // Clear the ref on completion
     } else {
       log.warn(
-        `[commandExecutor] Command "${command}" succeeded, but a newer command has already started. Not clearing ref or dispatching success for this instance.`,
+        `[commandExecutor] Command "${command}" completed, but a newer command has already started. Not clearing ref or dispatching success for this instance.`,
       );
       // Do not clear the ref or dispatch success, as it belongs to the newer command now.
     }
@@ -185,6 +234,12 @@ export const executeCommandInternal = async (
       }
     }
   } catch (error) {
+    // If the timeout was active when an error occurred, clear it
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+
     const formattedError = handleError(error);
     log.error(
       `[commandExecutor] Command "${command}" execution failed:`,
@@ -192,16 +247,21 @@ export const executeCommandInternal = async (
     );
 
     // Check if the error belongs to the currently active command in the ref
-    if (currentCommandRef.current?.promise === deferredPromise) {
+    if (currentCommandRef.current?.promise === thisExecutionPromise) {
+      // Reject the promise explicitly ONLY if it hasn't been resolved by timeout already
+      // (This check is slightly conceptual as promises don't have a standard isPending state,
+      // but the logic flow ensures rejection happens only on actual errors before resolution)
+      thisExecutionPromise.reject(formattedError); // Ensure the specific promise is rejected
+
       dispatch({ type: 'COMMAND_FAILURE', payload: formattedError });
       currentCommandRef.current = null; // Clear ref on failure of the active command
     } else {
       log.warn(
-        `[commandExecutor] Error caught for command "${command}", but it's no longer the active command. Ignoring cleanup/dispatch for this specific error instance.`,
+        `[commandExecutor] Error caught for command "${command}", but it's no longer the active command or may have timed out. Ignoring cleanup/dispatch for this specific error instance.`,
       );
       // Do not clear the ref or dispatch failure, as it belongs to the newer command now.
     }
-    // Always re-throw the error so the caller (executeCommandWithTimeout) catches it
+    // Always re-throw the error so the caller catches it
     throw formattedError;
   }
 };
