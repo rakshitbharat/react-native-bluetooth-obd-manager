@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useEffect } from 'react';
 import { NativeEventEmitter, NativeModules } from 'react-native';
 import type { EmitterSubscription } from 'react-native';
 import type {
@@ -55,8 +55,7 @@ export const useBluetoothListener = (
   currentCommandRef: React.MutableRefObject<CommandExecutionState | null>,
   dispatch: React.Dispatch<BluetoothAction>,
 ): void => {
-  const handleIncomingData = useCallback(
-    (data: BleManagerDidUpdateValueForCharacteristicEvent) => {
+  const handleIncomingData = (data: BleManagerDidUpdateValueForCharacteristicEvent) => {
       const value = data.value; // This is number[]
       log.info(
         '[useBluetoothListener] Received data chunk:',
@@ -91,59 +90,15 @@ export const useBluetoothListener = (
             // --- Resolve the Promise ---
             if (commandState.promise) {
               // Prepare the response object
-              // Get all raw chunks for the *completed* response index
-              const completedRawChunks = commandState.receivedRawChunksAll[currentIndex];
-              // Convert the raw number[] chunks to Uint8Array chunks
-              const processedChunks = completedRawChunks.map(chunkArray => bytesToUint8Array(chunkArray)); // Assuming chunkArray is number[]
+              // Get the flat array of all raw bytes for the *completed* response index
+              const completedRawBytes: number[] = commandState.receivedRawChunksAll[currentIndex];
 
+              // Create the InternalCommandResponse based on the flat array structure
               const internalResponse: InternalCommandResponse = {
-                // Wrap the single response's chunks in an array as expected by the type?
-                // No, the type expects Uint8Array[] and number[][] where each inner array is a chunk.
-                // Let's adjust based on how receivedRawChunksAll is structured.
-                // If receivedRawChunksAll[currentIndex] is number[] representing the concatenated bytes for the response
-                // This assumption seems wrong based on the log "Appended chunk...".
-                // Let's assume receivedRawChunksAll[currentIndex] is actually number[][] where each inner array is a chunk.
-
-                // Assuming receivedRawChunksAll[currentIndex] is number[] representing the concatenated bytes for the response
-                // This assumption seems wrong based on the log "Appended chunk...".
-                // Let's assume receivedRawChunksAll[currentIndex] is actually number[][] where each inner array is a chunk.
-
-                // Re-evaluate: The log "Appended chunk to receivedRawChunksAll index ${currentIndex}" and the push(...value)
-                // suggests receivedRawChunksAll[currentIndex] is actually a single number[] accumulating all bytes.
-                // Let's proceed with that assumption for now, but it might need correction if the structure is different.
-
-                // If it's a single number[]:
-                // chunks: [bytesToUint8Array(completedRawChunks)], // Wrap the single Uint8Array in an array
-                // rawResponse: [completedRawChunks], // Wrap the single number[] in an array
-
-                // Let's refine based on the previous log: "Appended chunk to receivedRawChunksAll index 0. Total chunks for this response: 6"
-                // This implies receivedRawChunksAll[currentIndex] is number[] containing ALL bytes concatenated.
-                // BUT the type InternalCommandResponse expects chunks: Uint8Array[] and rawResponse: number[][]
-                // This means the listener *should* be storing chunks separately.
-
-                // --- Correction: Adjusting data storage logic ---
-                // Let's modify the storage to match the expected type.
-                // receivedRawChunksAll should be number[][][] -> [responseIndex][chunkIndex][byteValue]
-                // Or, simpler: keep CommandExecutionState as is, but process correctly here.
-
-                // Let's assume CommandExecutionState.receivedRawChunksAll is number[][]
-                // where each inner number[] IS a single chunk received.
-
-                // Re-read the code:
-                // commandState.receivedRawChunksAll[currentIndex].push(...value);
-                // This pushes the *bytes* of the current chunk into the array at currentIndex.
-                // So, receivedRawChunksAll[currentIndex] becomes a flat number[] of all bytes for that response.
-
-                // --- Final approach: Adapt to the current structure ---
-                // We have a flat number[] in receivedRawChunksAll[currentIndex].
-                // We need to return InternalCommandResponse { chunks: Uint8Array[], rawResponse: number[][] }
-                // This implies the structure in CommandExecutionState or the processing here is mismatched.
-                // Let's return what we have and fix the type/structure later if needed.
-                // For now, treat the flat array as a single "chunk" for the response.
-
-                 chunks: [bytesToUint8Array(commandState.receivedRawChunksAll[currentIndex])], // Array containing one Uint8Array
-                 rawResponse: [commandState.receivedRawChunksAll[currentIndex]], // Array containing one number[]
-
+                 // Treat the flat array as the bytes of a single chunk
+                 chunks: [bytesToUint8Array(completedRawBytes)], // Array containing one Uint8Array
+                 // Treat the flat array as the raw data of a single chunk
+                 rawResponse: [completedRawBytes], // Array containing one number[]
               };
 
               commandState.promise.resolve(internalResponse);
@@ -213,9 +168,7 @@ export const useBluetoothListener = (
           value,
         );
       }
-    },
-    [currentCommandRef, dispatch], // Dependencies: ref and dispatch
-  );
+    };
 
   // Effect to setup and cleanup the listener
   useEffect(() => {
@@ -234,5 +187,5 @@ export const useBluetoothListener = (
       );
       dataListener.remove();
     };
-  }, [handleIncomingData]); // Re-run if handleIncomingData changes
+  }, []);
 };
