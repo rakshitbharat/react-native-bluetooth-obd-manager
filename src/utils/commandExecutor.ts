@@ -91,7 +91,6 @@ export const executeCommandInternal = async (
 
   currentCommandRef.current = {
     promise: deferredPromise,
-    receivedRawChunks: [], // Keep original initialization for now
     receivedRawChunksAll: [[]], // Initialize new array with one empty response array
     currentResponseIndex: 0, // Start index for receivedRawChunksAll
     expectedReturnType: returnType,

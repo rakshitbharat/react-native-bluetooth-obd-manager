@@ -110,18 +110,10 @@ export interface InternalCommandResponse {
  * @internal
  */
 export interface CommandExecutionState {
-  /** The deferred promise associated with this command execution. */
-  promise: DeferredPromise<InternalCommandResponse>; // Resolves with the internal structure
-  /**
-   * Accumulates raw byte arrays (number[]) for the *first* or *primary* response.
-   * (May be repurposed or removed later).
-   */
-  receivedRawChunks: number[][];
-  /**
-   * Accumulates *all* raw byte arrays (number[][]). Each inner array
-   * represents chunks for a single response, indexed by terminator detection.
-   */
-  receivedRawChunksAll: number[][][]; // Array of responses, each response is an array of chunks
+  /** Promise associated with the command */
+  promise: DeferredPromise<InternalCommandResponse>;
+  /** Array storing arrays of raw data chunks received for the last few responses */
+  receivedRawChunksAll: number[][]; // Keep as number[][] based on listener usage
   /** The index of the response currently being populated in receivedRawChunksAll. */
   currentResponseIndex: number;
   /** The expected format for the final resolved value of the public executeCommand promise. */

@@ -65,16 +65,6 @@ export const useBluetoothListener = (
         try {
           const commandState = currentCommandRef.current;
 
-          // --- Keep original receivedRawChunks logic for now ---
-          if (!commandState.receivedRawChunks) {
-            commandState.receivedRawChunks = [];
-          }
-          commandState.receivedRawChunks.push([...value]);
-          log.debug(
-            '[useBluetoothListener] Appended chunk to receivedRawChunks. Total chunks:',
-            commandState.receivedRawChunks.length,
-          );
-
           // --- New logic for receivedRawChunksAll ---
           const currentIndex = commandState.currentResponseIndex;
 
@@ -87,7 +77,8 @@ export const useBluetoothListener = (
           }
 
           // Append the new chunk to the current response's chunk array in receivedRawChunksAll
-          commandState.receivedRawChunksAll[currentIndex].push([...value]);
+          // Use spread syntax directly in push to add individual numbers
+          commandState.receivedRawChunksAll[currentIndex].push(...value);
           log.debug(
             `[useBluetoothListener] Appended chunk to receivedRawChunksAll index ${currentIndex}. Total chunks for this response: ${commandState.receivedRawChunksAll[currentIndex].length}`,
           );
@@ -98,7 +89,7 @@ export const useBluetoothListener = (
               `[useBluetoothListener] Terminator found in chunk for response index ${currentIndex}.`,
             );
 
-            // Increment the index to prepare for the next potential response
+            // Increment the index to prepare for the next response
             let nextIndex = commandState.currentResponseIndex + 1;
 
             // Initialize the array for the *next* response index in receivedRawChunksAll
