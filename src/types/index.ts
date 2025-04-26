@@ -250,24 +250,36 @@ export interface UseBluetoothResult extends BluetoothContextState {
   /**
    * Sends a command to the connected ELM327 device and returns the response as a string.
    * @param command The command to send (e.g., "AT Z", "01 0C")
+   * @param options Optional settings for command execution (e.g., timeout).
    * @returns Promise resolving to the string response
    */
-  sendCommand: (command: string) => Promise<string>;
+  sendCommand: (
+    command: string,
+    options?: { timeout?: number },
+  ) => Promise<string>;
 
   /**
    * Sends a command to the connected ELM327 device and returns the raw response bytes.
    * @param command The command to send
+   * @param options Optional settings for command execution (e.g., timeout).
    * @returns Promise resolving to the raw byte response
    */
-  sendCommandRaw: (command: string) => Promise<Uint8Array>;
+  sendCommandRaw: (
+    command: string,
+    options?: { timeout?: number },
+  ) => Promise<Uint8Array>;
 
   /**
    * Sends a command to the connected ELM327 device and returns the response as
    * an array of chunks, preserving the original data packet boundaries.
    * @param command The command to send
+   * @param options Optional settings for command execution (e.g., timeout).
    * @returns Promise resolving to the chunked response
    */
-  sendCommandRawChunked: (command: string) => Promise<ChunkedResponse>;
+  sendCommandRawChunked: (
+    command: string,
+    options?: { timeout?: number },
+  ) => Promise<ChunkedResponse>;
 
   /**
    * Sets the streaming state.

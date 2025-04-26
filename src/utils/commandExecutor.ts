@@ -19,7 +19,8 @@ import { log } from './logger'; // Adjust path as needed
 import { chunksToString, concatenateChunks } from './byteUtils'; // Adjust path as needed
 
 // Helper to create Promises that can be resolved/rejected externally
-function createDeferredPromise<T>(): DeferredPromise<T> {
+// Export the function
+export function createDeferredPromise<T>(): DeferredPromise<T> {
   let resolveFn!: (value: T | PromiseLike<T>) => void;
   let rejectFn!: (reason: Error) => void;
 
