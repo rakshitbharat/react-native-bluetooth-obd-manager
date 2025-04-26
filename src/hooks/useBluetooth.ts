@@ -639,7 +639,7 @@ export const useBluetooth = (): UseBluetoothResult => {
   // Helper function to add timeout to command execution
   const executeCommandWithTimeout = async <T>(
     commandPromise: Promise<T>,
-    timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS,
+    timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS, // Keep default
   ): Promise<T> => {
     let timeoutId: NodeJS.Timeout | null = null;
 
@@ -677,26 +677,27 @@ export const useBluetooth = (): UseBluetoothResult => {
     async (
       command: string,
       returnType: CommandReturnType,
-      // Remove options parameter
+      options?: { timeout?: number }, // Add options parameter back
     ): Promise<string | Uint8Array | ChunkedResponse> => {
       if (!state.connectedDevice || !state.activeDeviceConfig) {
         throw new Error('Not connected to a device.');
       }
       // Call the separated execution logic from commandExecutor.ts
       // Wrap the internal call with the timeout helper
+      // Use provided timeout or default
+      const timeoutDuration = options?.timeout ?? DEFAULT_COMMAND_TIMEOUT_MS;
       return executeCommandWithTimeout(
         executeCommandInternal(
           command,
           returnType,
-          // Remove options argument
-          // options,
+          // options, // No longer pass options down to internal
           state.connectedDevice, // Pass connected device
           state.activeDeviceConfig, // Pass active config
           state.isAwaitingResponse, // Pass awaiting state
           currentCommandRef, // Pass the ref
           dispatch, // Pass dispatch
         ),
-        DEFAULT_COMMAND_TIMEOUT_MS, // Use the defined timeout
+        timeoutDuration, // Use the determined timeout duration
       );
     },
     [
@@ -708,11 +709,15 @@ export const useBluetooth = (): UseBluetoothResult => {
     ],
   );
 
-  const sendCommand = async (command: string): Promise<string> => {
-    // Calls the executeCommand wrapper above, which now includes timeout
+  const sendCommand = async (
+    command: string,
+    options?: { timeout?: number }, // Add options parameter
+  ): Promise<string> => {
+    // Calls the executeCommand wrapper above, passing options
     const result = await executeCommand(
       command,
       CommandReturnType.CHUNKED, // Request chunked internally
+      options, // Pass options
     );
 
     if (!isChunkedResponse(result)) {
@@ -725,11 +730,15 @@ export const useBluetooth = (): UseBluetoothResult => {
     return chunksToString(result); // Process the chunked response
   };
 
-  const sendCommandRaw = async (command: string): Promise<Uint8Array> => {
-    // Calls the executeCommand wrapper above, which now includes timeout
+  const sendCommandRaw = async (
+    command: string,
+    options?: { timeout?: number }, // Add options parameter
+  ): Promise<Uint8Array> => {
+    // Calls the executeCommand wrapper above, passing options
     const result = await executeCommand(
       command,
       CommandReturnType.CHUNKED, // Request chunked internally
+      options, // Pass options
     );
 
     if (!isChunkedResponse(result)) {
@@ -743,11 +752,13 @@ export const useBluetooth = (): UseBluetoothResult => {
 
   const sendCommandRawChunked = async (
     command: string,
+    options?: { timeout?: number }, // Add options parameter
   ): Promise<ChunkedResponse> => {
-    // Calls the executeCommand wrapper above, which now includes timeout
+    // Calls the executeCommand wrapper above, passing options
     const result = await executeCommand(
       command,
       CommandReturnType.CHUNKED, // Request chunked internally
+      options, // Pass options
     );
 
     if (!isChunkedResponse(result)) {
