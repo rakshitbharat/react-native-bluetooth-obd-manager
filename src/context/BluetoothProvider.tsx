@@ -20,41 +20,18 @@ import {
   StyleSheet,
 } from 'react-native';
 import BleManager from 'react-native-ble-manager';
-import type {
-  Peripheral,
-  BleManagerState,
-  BleManagerDidUpdateValueForCharacteristicEvent,
-  ChunkedResponse,
-} from '../types';
+import type { Peripheral, BleManagerState } from '../types';
 import {
   BluetoothDispatchContext,
   BluetoothStateContext,
 } from './BluetoothContext';
 import { bluetoothReducer, initialState } from './BluetoothReducer';
-import type { PeripheralWithPrediction, DeferredPromise } from '../types';
-import { ELM327_COMMAND_TERMINATOR } from '../constants';
-import { bytesToString } from '../utils/ecuUtils';
+import type { PeripheralWithPrediction, CommandExecutionState } from '../types';
 import { log } from '../utils/logger';
+import { useBluetoothListener } from '../hooks/useBluetoothListener';
 
 const BleManagerModule = NativeModules.BleManager;
 const bleManagerEmitter = new NativeEventEmitter(BleManagerModule);
-
-/**
- * Represents the state of a command being executed over Bluetooth.
- * This interface tracks the promise, timeout, and response data for each command.
- */
-interface CommandExecutionState {
-  /** Promise that will resolve with the command's response */
-  promise: DeferredPromise<string | Uint8Array | ChunkedResponse>;
-  /** Timeout ID for command expiration */
-  timeoutId: NodeJS.Timeout | null;
-  /** Buffer storing incoming response bytes */
-  responseBuffer: number[];
-  /** Array storing each chunk of response data as it arrives */
-  responseChunks: number[][];
-  /** Expected format of the command's response */
-  expectedReturnType: 'string' | 'bytes' | 'chunked';
-}
 
 /**
  * Props for the BluetoothProvider component
@@ -266,69 +243,8 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
     }
   }, []);
 
-  // Update handleIncomingData dependencies
-  const handleIncomingData = useCallback(
-    (value: number[]) => {
-      log.info(
-        '[BluetoothProvider] Received raw data:',
-        JSON.stringify(value),
-        'ASCII:',
-        bytesToString(value),
-      );
-
-      // Only process data if we're awaiting a response and have an active command
-      if (state.isAwaitingResponse && currentCommandRef.current) {
-        try {
-          const commandState = currentCommandRef.current;
-
-          // Simply accumulate the data
-          commandState.responseChunks.push([...value]);
-          commandState.responseBuffer.push(...value);
-
-          // Check if this chunk contains the ELM327 prompt character ('>') which signals end of response
-          if (value.indexOf(ELM327_COMMAND_TERMINATOR) !== -1) {
-            log.info('[BluetoothProvider] Response terminator received');
-
-            const response = bytesToString(commandState.responseBuffer);
-            log.info(
-              '[BluetoothProvider] Complete response received:',
-              response,
-            );
-
-            // Let the command handler deal with processing/cleaning the response
-            const promiseToResolve = commandState.promise;
-            currentCommandRef.current = null;
-            dispatch({ type: 'COMMAND_SUCCESS' });
-            promiseToResolve.resolve(response);
-          }
-        } catch (error) {
-          log.error(
-            '[BluetoothProvider] Error processing incoming data:',
-            error,
-          );
-          if (currentCommandRef.current?.promise) {
-            currentCommandRef.current.promise.reject(handleError(error));
-            currentCommandRef.current = null;
-          }
-          dispatch({ type: 'COMMAND_FAILURE', payload: handleError(error) });
-        }
-      }
-    },
-    [state.isAwaitingResponse],
-  ); // Remove state.connectedDevice dependency since it's not used
-
-  /**
-   * Ensures consistent error handling by converting any error type to Error.
-   *
-   * @param error - The error to handle
-   * @returns A standardized Error object
-   */
-  const handleError = (error: unknown): Error => {
-    if (error instanceof Error) {
-      return error;
-    }
-    return new Error(String(error));
-  };
+  // --- Use the new hook for data listening ---
+  useBluetoothListener(currentCommandRef, dispatch);
 
   // Use refs to store listeners to ensure they are removed correctly
   const listenersRef = useRef<EmitterSubscription[]>([]);
@@ -355,33 +271,6 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
         });
       });
   }, []);
-
-  // Data Notification Listener - Re-register when handler changes
-  useEffect(() => {
-    log.info(
-      '[BluetoothProvider] Setting up BLE data notification listener...',
-    );
-    const dataListener = bleManagerEmitter.addListener(
-      'BleManagerDidUpdateValueForCharacteristic',
-      (data: BleManagerDidUpdateValueForCharacteristicEvent) => {
-        log.info(
-          `[BluetoothProvider] Received data from characteristic: ${data.characteristic}`,
-        );
-        // log.log(JSON.stringify(data.value)); // Already logged in handleIncomingData
-
-        // Directly call the handleIncomingData passed to this effect instance
-        handleIncomingData(data.value);
-      },
-    );
-
-    // Cleanup function removes the specific listener added in this effect run
-    return () => {
-      log.info(
-        '[BluetoothProvider] Removing BLE data notification listener...',
-      );
-      dataListener.remove();
-    };
-  }, [handleIncomingData]); // Add handleIncomingData as a dependency
 
   // Other BLE State Listeners
   useEffect(() => {
@@ -453,13 +342,10 @@ export const BluetoothProvider: FC<BluetoothProviderProps> = ({ children }) => {
               log.error(
                 '[BluetoothProvider] Rejecting command due to disconnect.',
               );
-              currentCommandRef.current.promise.reject(
+              // Ensure promise exists before rejecting
+              currentCommandRef.current.promise?.reject(
                 new Error('Device disconnected during command.'),
               );
-              if (currentCommandRef.current.timeoutId) {
-                clearTimeout(currentCommandRef.current.timeoutId);
-              }
-              currentCommandRef.current.responseBuffer = [];
               currentCommandRef.current = null;
             }
             dispatch({ type: 'DEVICE_DISCONNECTED' });

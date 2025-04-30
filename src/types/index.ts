@@ -78,28 +78,46 @@ export interface BleDisconnectPeripheralEvent {
 }
 
 /**
- * Interface representing chunked Bluetooth response data.
- * Each element in the array represents a distinct data packet received.
+ * Represents a response received as multiple chunks from the BLE device.
+ * This is the public structure returned by sendCommandRawChunked.
  */
 export interface ChunkedResponse {
+  /**
+   * An array of Uint8Array, where each element represents a single
+   * notification chunk received from the device.
+   */
   chunks: Uint8Array[];
-  totalBytes: number;
-  command: string;
-  rawResponse?: number[][];
+  /**
+   * An array of number[], mirroring `chunks` but preserving the raw numeric
+   * byte values exactly as received from the underlying react-native-ble-manager library.
+   */
+  rawResponse: number[][];
 }
 
+/**
+ * Internal structure used to resolve the command promise within the provider.
+ * Contains both Uint8Array chunks and raw number[] chunks.
+ * @internal
+ */
+export interface InternalCommandResponse {
+  chunks: Uint8Array[];
+  rawResponse: number[][];
+}
+
+/**
+ * Represents the internal state tracked while a single command is executing
+ * and awaiting its complete response(s).
+ * @internal
+ */
 export interface CommandExecutionState {
-  promise: DeferredPromise<string | Uint8Array | ChunkedResponse>;
-  timeoutId: NodeJS.Timeout | null;
-  responseBuffer: number[];
-  responseChunks: number[][];
+  /** Promise associated with the command */
+  promise: DeferredPromise<InternalCommandResponse>;
+  /** Array storing arrays of raw data chunks received for the last few responses */
+  receivedRawChunksAll: number[][]; // Keep as number[][] based on listener usage
+  /** The index of the response currently being populated in receivedRawChunksAll. */
+  currentResponseIndex: number;
+  /** The expected format for the final resolved value of the public executeCommand promise. */
   expectedReturnType: 'string' | 'bytes' | 'chunked';
-}
-
-export interface CurrentCommand {
-  timeoutId?: NodeJS.Timeout;
-  responseBuffer: number[]; // Change to store raw bytes
-  expectedReturnType: 'string' | 'bytes';
 }
 
 /**
@@ -232,7 +250,7 @@ export interface UseBluetoothResult extends BluetoothContextState {
   /**
    * Sends a command to the connected ELM327 device and returns the response as a string.
    * @param command The command to send (e.g., "AT Z", "01 0C")
-   * @param options Options for command execution
+   * @param options Optional settings for command execution (e.g., timeout).
    * @returns Promise resolving to the string response
    */
   sendCommand: (
@@ -243,7 +261,7 @@ export interface UseBluetoothResult extends BluetoothContextState {
   /**
    * Sends a command to the connected ELM327 device and returns the raw response bytes.
    * @param command The command to send
-   * @param options Options for command execution
+   * @param options Optional settings for command execution (e.g., timeout).
    * @returns Promise resolving to the raw byte response
    */
   sendCommandRaw: (
@@ -255,7 +273,7 @@ export interface UseBluetoothResult extends BluetoothContextState {
    * Sends a command to the connected ELM327 device and returns the response as
    * an array of chunks, preserving the original data packet boundaries.
    * @param command The command to send
-   * @param options Options for command execution
+   * @param options Optional settings for command execution (e.g., timeout).
    * @returns Promise resolving to the chunked response
    */
   sendCommandRawChunked: (
