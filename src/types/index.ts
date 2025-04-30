@@ -106,16 +106,16 @@ export interface InternalCommandResponse {
 
 /**
  * Represents the internal state tracked while a single command is executing
- * and awaiting its complete response.
+ * and awaiting its complete response(s).
  * @internal
  */
 export interface CommandExecutionState {
-  /** The deferred promise associated with this command execution. */
-  promise: DeferredPromise<InternalCommandResponse>; // Resolves with the internal structure
-  /** The timeout ID for this command. */
-  timeoutId: NodeJS.Timeout | null;
-  /** Accumulates the raw byte arrays (number[]) received for this command. */
-  receivedRawChunks: number[][];
+  /** Promise associated with the command */
+  promise: DeferredPromise<InternalCommandResponse>;
+  /** Array storing arrays of raw data chunks received for the last few responses */
+  receivedRawChunksAll: number[][]; // Keep as number[][] based on listener usage
+  /** The index of the response currently being populated in receivedRawChunksAll. */
+  currentResponseIndex: number;
   /** The expected format for the final resolved value of the public executeCommand promise. */
   expectedReturnType: 'string' | 'bytes' | 'chunked';
 }
@@ -250,7 +250,7 @@ export interface UseBluetoothResult extends BluetoothContextState {
   /**
    * Sends a command to the connected ELM327 device and returns the response as a string.
    * @param command The command to send (e.g., "AT Z", "01 0C")
-   * @param options Options for command execution
+   * @param options Optional settings for command execution (e.g., timeout).
    * @returns Promise resolving to the string response
    */
   sendCommand: (
@@ -261,7 +261,7 @@ export interface UseBluetoothResult extends BluetoothContextState {
   /**
    * Sends a command to the connected ELM327 device and returns the raw response bytes.
    * @param command The command to send
-   * @param options Options for command execution
+   * @param options Optional settings for command execution (e.g., timeout).
    * @returns Promise resolving to the raw byte response
    */
   sendCommandRaw: (
@@ -273,7 +273,7 @@ export interface UseBluetoothResult extends BluetoothContextState {
    * Sends a command to the connected ELM327 device and returns the response as
    * an array of chunks, preserving the original data packet boundaries.
    * @param command The command to send
-   * @param options Options for command execution
+   * @param options Optional settings for command execution (e.g., timeout).
    * @returns Promise resolving to the chunked response
    */
   sendCommandRawChunked: (
