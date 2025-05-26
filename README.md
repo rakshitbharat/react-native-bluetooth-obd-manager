@@ -1,3 +1,12 @@
+### THIS IS STILL UNDER CONSTRUCTION ###
+-
+-
+-
+-
+-
+-
+-
+------------
 # React Native Bluetooth OBD Manager
 
 [![npm version](https://img.shields.io/npm/v/react-native-bluetooth-obd-manager.svg?style=flat)](https://www.npmjs.com/package/react-native-bluetooth-obd-manager)
